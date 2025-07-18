@@ -1,0 +1,56 @@
+{
+  "badges": {
+    "comment": "Цены на закатные значки указаны за 1 штуку.",
+    "types": {
+      "круглый_37мм": [
+        { "from": 1, "to": 10, "price_per_item": 130.0 },
+        { "from": 11, "to": 50, "price_per_item": 100.0 },
+        { "from": 51, "to": 100, "price_per_item": 90.0 },
+        { "from": 101, "to": 200, "price_per_item": 80.0 },
+        { "from": 201, "to": 500, "price_per_item": 75.0 },
+        { "from": 501, "to": 1000, "price_per_item": 70.0 }
+      ],
+      "круглый_56мм": [
+        { "from": 1, "to": 10, "price_per_item": 170.0 },
+        { "from": 11, "to": 50, "price_per_item": 120.0 },
+        { "from": 51, "to": 100, "price_per_item": 110.0 },
+        { "from": 101, "to": 200, "price_per_item": 100.0 },
+        { "from": 201, "to": 500, "price_per_item": 95.0 },
+        { "from": 501, "to": 1000, "price_per_item": 90.0 }
+      ],
+      "квадратный_50х50мм": [
+        { "from": 1, "to": 10, "price_per_item": 220.0 },
+        { "from": 11, "to": 50, "price_per_item": 180.0 },
+        { "from": 51, "to": 100, "price_per_item": 150.0 },
+        { "from": 101, "to": 200, "price_per_item": 100.0 },
+        { "from": 201, "to": 500, "price_per_item": 90.0 },
+        { "from": 501, "to": 1000, "price_per_item": 85.0 }
+      ],
+      "сердце_57х53мм": [
+        { "from": 1, "to": 10, "price_per_item": 220.0 },
+        { "from": 11, "to": 50, "price_per_item": 180.0 },
+        { "from": 51, "to": 100, "price_per_item": 150.0 },
+        { "from": 101, "to": 200, "price_per_item": 100.0 },
+        { "from": 201, "to": 500, "price_per_item": 90.0 },
+        { "from": 501, "to": 1000, "price_per_item": 85.0 }
+      ]
+    }
+  },
+  "digital_printing": {
+    "comment": "Цифровая печать на листах SRA3 (320x450 мм). Цены указаны за 1 лист.",
+    "paper_type": {
+      "мелованная_200-300г": {
+        "односторонняя_4+0": [
+          { "from": 1, "to": 5, "price_per_item": 68.0 },
+          { "from": 6, "to": 10, "price_per_item": 65.0 },
+          { "from": 11, "to": 50, "price_per_item": 62.0 }
+        ],
+        "двухсторонняя_4+4": [
+          { "from": 1, "to": 5, "price_per_item": 136.0 },
+          { "from": 6, "to": 10, "price_per_item": 130.0 },
+          { "from": 11, "to": 50, "price_per_item": 125.0 }
+        ]
+      }
+    }
+  }
+}
