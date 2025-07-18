@@ -2,6 +2,7 @@ package org.example
 
 import org.example.bot.ResponseHandler
 import org.example.bot.TypographyBot
+import org.example.calculation.PriceListProvider
 import org.example.processing.JobQueue
 import org.example.services.LlamaCliServiceImpl
 import org.example.services.TranslationService
@@ -14,11 +15,12 @@ fun main() {
     val modelPath = "/home/artem/llm_models/Phi-3-mini-4k-instruct-q4.gguf"
     val textProvider = TextProvider("messages_ru.properties")
     val translationService = TranslationService()
+    val priceListProvider = PriceListProvider()
     val localLlmService = LlamaCliServiceImpl(llamaBinaryPath, modelPath, translationService)
     val jobQueue = JobQueue(localLlmService)
     val sessionManager = SessionManager()
     val responseHandler = ResponseHandler(sessionManager, textProvider, jobQueue)
     val typographyBot = TypographyBot(responseHandler)
     typographyBot.start()
-    println("Бот запущен с новой архитектурой!")
+    println("Бот запущен!")
 }
