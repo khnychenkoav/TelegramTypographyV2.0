@@ -1,21 +1,27 @@
 plugins {
-    kotlin("jvm") version "2.1.20"
+    kotlin("jvm") version "2.0.0"
+    application
 }
 
-group = "org.example"
+group = "com.example"
 version = "1.0-SNAPSHOT"
 
-repositories {
-    mavenCentral()
-}
 
 dependencies {
+    implementation("io.github.kotlin-telegram-bot.kotlin-telegram-bot:telegram:6.3.0")
+    implementation("org.slf4j:slf4j-simple:2.0.13")
+
     testImplementation(kotlin("test"))
 }
 
 tasks.test {
     useJUnitPlatform()
 }
+
 kotlin {
-    jvmToolchain(23)
+    jvmToolchain(21)
+}
+
+application {
+    mainClass.set("MainKt")
 }
