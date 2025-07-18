@@ -3,6 +3,7 @@ package org.example.bot
 import com.github.kotlintelegrambot.Bot
 import com.github.kotlintelegrambot.bot
 import com.github.kotlintelegrambot.dispatch
+import com.github.kotlintelegrambot.dispatcher.callbackQuery
 import com.github.kotlintelegrambot.dispatcher.command
 import com.github.kotlintelegrambot.dispatcher.text
 import com.github.kotlintelegrambot.logging.LogLevel
@@ -23,6 +24,10 @@ class TypographyBot(private val responseHandler: ResponseHandler) {
                 if (message.text?.startsWith("/") != true) {
                     responseHandler.onTextMessage(this)
                 }
+            }
+
+            callbackQuery {
+                responseHandler.onCallbackQuery(this)
             }
         }
     }
