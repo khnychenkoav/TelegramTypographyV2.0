@@ -4,6 +4,7 @@ import org.example.bot.ResponseHandler
 import org.example.bot.TypographyBot
 import org.example.processing.JobQueue
 import org.example.services.LlamaCliServiceImpl
+import org.example.services.TranslationService
 import org.example.state.SessionManager
 import org.example.utils.TextProvider
 
@@ -12,7 +13,8 @@ fun main() {
     val llamaBinaryPath = "/home/artem/llama.cpp/build/bin/llama-cli"
     val modelPath = "/home/artem/llm_models/Phi-3-mini-4k-instruct-q4.gguf"
     val textProvider = TextProvider("messages_ru.properties")
-    val localLlmService = LlamaCliServiceImpl(llamaBinaryPath, modelPath)
+    val translationService = TranslationService()
+    val localLlmService = LlamaCliServiceImpl(llamaBinaryPath, modelPath, translationService)
     val jobQueue = JobQueue(localLlmService)
     val sessionManager = SessionManager()
     val responseHandler = ResponseHandler(sessionManager, textProvider, jobQueue)

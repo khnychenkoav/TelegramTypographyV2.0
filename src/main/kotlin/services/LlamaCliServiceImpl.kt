@@ -1,26 +1,41 @@
 package org.example.services
 
+import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import java.io.File
 
 class LlamaCliServiceImpl(
     private val llamaBinaryPath: String,
     private val modelPath: String,
+    private val translationService: TranslationService,
     private val threads: Int = 4,
     private val maxTokens: Int = 250
 ) : LlmService {
     private val logger = LoggerFactory.getLogger(javaClass)
 
-    override fun generate(systemPrompt: String, userPrompt: String): String {
-        logger.info("Вызов Llama.cpp (версия 'как в тесте')...")
+    override fun generateWithHistory(
+        systemPrompt: String,
+        history: List<Pair<String, String>>,
+        newUserPrompt: String
+    ): String {
+        logger.info("Вызов Llama.cpp с историей, системным промптом и переводом...")
+
+        val translatedSystemPrompt = translate(systemPrompt, "ru", "en")
+        val translatedNewUserPrompt = translate(newUserPrompt, "ru", "en")
+        val translatedHistory = history.map { (userMsg, assistantMsg) ->
+            translate(userMsg, "ru", "en") to translate(assistantMsg, "ru", "en")
+        }
+
+        val fullPrompt = buildPrompt(translatedSystemPrompt, translatedHistory, translatedNewUserPrompt)
+        logger.trace("Собранный английский промпт:\n{}", fullPrompt)
 
         val command = listOf(
             llamaBinaryPath,
             "-m", modelPath,
-            "-p", userPrompt,
-            "-n", maxTokens.toString()
+            "-p", fullPrompt,
+            "-n", maxTokens.toString(),
+            "-t", threads.toString()
         )
-
         logger.debug("Команда для запуска: {}", command)
 
         var process: Process? = null
@@ -29,7 +44,6 @@ class LlamaCliServiceImpl(
             processBuilder.directory(File(llamaBinaryPath).parentFile)
             processBuilder.redirectErrorStream(true)
             process = processBuilder.start()
-
             process.outputStream.close()
 
             val output = process.inputStream.bufferedReader().use { it.readText() }
@@ -42,51 +56,77 @@ class LlamaCliServiceImpl(
                 return "Ошибка при работе с локальной LLM (код $exitCode)."
             }
 
-            // --- ИСПРАВЛЕННЫЙ ПАРСЕР, ИЩЕТ ПОСЛЕДНЕЕ ВХОЖДЕНИЕ ---
             val assistantTag = "<|assistant|>"
-            // Ищем индекс ПОСЛЕДНЕГО вхождения тега
             val lastAssistantIndex = output.lastIndexOf(assistantTag)
-
             if (lastAssistantIndex == -1) {
                 logger.warn("Не найден тег ассистента. Полный вывод:\n{}", output)
-                return if (output.trim().isNotBlank()) output.trim() else "Модель не дала структурированный ответ."
+                return output.trim().ifBlank { "Модель не дала структурированный ответ." }
             }
 
-            // Берем все, что после ПОСЛЕДНЕГО тега
             var responsePart = output.substring(lastAssistantIndex + assistantTag.length)
 
-            // Остальная логика отсечения "мусора" в конце остается
             val endOfResponseMarker = "> EOF by user"
             val perfMarker = "llama_perf"
             val endOfResponseIndex = responsePart.indexOf(endOfResponseMarker)
             val perfIndex = responsePart.indexOf(perfMarker)
 
-            var finalResponse = responsePart
+            var englishResponse = responsePart
             if (endOfResponseIndex != -1) {
-                finalResponse = responsePart.substring(0, endOfResponseIndex)
+                englishResponse = responsePart.substring(0, endOfResponseIndex)
             } else if (perfIndex != -1) {
-                finalResponse = responsePart.substring(0, perfIndex)
+                englishResponse = responsePart.substring(0, perfIndex)
             }
+            val cleanEnglishResponse = englishResponse.trim()
 
-            val cleanResult = finalResponse.trim()
-            // --- КОНЕЦ ИСПРАВЛЕННОГО ПАРСЕРА ---
-
-            if (cleanResult.isBlank()) {
+            if (cleanEnglishResponse.isBlank()) {
                 logger.warn("Результат после парсинга пуст. Полный вывод:\n{}", output)
                 return "Модель не дала ответ на ваш запрос."
             }
+            logger.info("Успешно получен английский ответ: '{}'", cleanEnglishResponse)
 
-            logger.info("Успешно получен и отпарсен ответ: '{}'", cleanResult)
-            return cleanResult
+            val russianResponse = translate(cleanEnglishResponse, "en", "ru")
+            logger.info("Финальный русский ответ: '{}'", russianResponse)
+
+            return russianResponse
 
         } catch (e: Exception) {
             logger.error("Критическая ошибка при вызове llama-cli", e)
             return "Критическая ошибка при вызове локальной LLM."
         } finally {
             if (process != null && process.isAlive) {
-                logger.warn("Принудительно завершаем процесс llama-cli (финальная проверка).")
                 process.destroyForcibly()
             }
         }
+    }
+
+    private fun translate(text: String, source: String, target: String): String {
+        if (text.isBlank()) return ""
+        logger.debug("Перевод: '{}' ({}-{})", text, source, target)
+        return runBlocking {
+            translationService.translate(text, source, target)
+        } ?: text
+    }
+
+    /**
+     * Собирает промпт в формате, который понимает модель Phi-3.
+     */
+    private fun buildPrompt(
+        system: String,
+        history: List<Pair<String, String>>,
+        newUserPrompt: String
+    ): String {
+        val promptBuilder = StringBuilder()
+
+        promptBuilder.append("<|system|>\n").append(system.trim()).append("<|end|>\n")
+
+        history.forEach { (user, assistant) ->
+            promptBuilder.append("<|user|>\n").append(user.trim()).append("<|end|>\n")
+            promptBuilder.append("<|assistant|>\n").append(assistant.trim()).append("<|end|>\n")
+        }
+
+        promptBuilder.append("<|user|>\n").append(newUserPrompt.trim()).append("<|end|>\n")
+        promptBuilder.append("<|assistant|>")
+
+        return promptBuilder.toString()
     }
 }

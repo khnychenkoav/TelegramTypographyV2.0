@@ -91,13 +91,21 @@ class ResponseHandler(
 
     private fun handleLlmChat(env: TextHandlerEnvironment, text: String) {
         val chatId = env.message.chat.id
-
+        val session = sessionManager.getSession(chatId)
         val job = LlmJob(
             chatId = chatId,
-            userText = text,
             systemPrompt = textProvider.get("llm.system_prompt.chat"),
+            history = session.conversationHistory.toList(),
+            newUserPrompt = text,
             onResult = { result ->
-                logger.info("Колбэк onResult вызван для чата {}. Отправляю результат пользователю.", chatId)
+                val updatedHistory = session.conversationHistory
+                updatedHistory.add(text to result)
+
+                while (updatedHistory.size > 5) {
+                    updatedHistory.removeFirst()
+                }
+                sessionManager.updateSession(chatId, session.copy(conversationHistory = updatedHistory))
+
                 sendMessage(chatId, result, null)
             }
         )

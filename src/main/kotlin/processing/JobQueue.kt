@@ -14,8 +14,9 @@ import java.util.concurrent.TimeUnit
 
 data class LlmJob(
     val chatId: Long,
-    val userText: String,
     val systemPrompt: String,
+    val history: List<Pair<String, String>>,
+    val newUserPrompt: String,
     val onResult: (String) -> Unit
 )
 
@@ -57,7 +58,7 @@ class JobQueue(
                     logger.info("Воркер получил семафор. Начинаю обработку задачи для чата {}.", job.chatId)
                     launch {
                         try {
-                            val result = llmService.generate(job.systemPrompt, job.userText)
+                            val result = llmService.generateWithHistory(job.systemPrompt, job.history, job.newUserPrompt)
                             logger.info("Задача для чата {} успешно обработана. Результат: '{}'", job.chatId, result.take(100))
                             job.onResult(result)
                         } catch (e: Exception) {
