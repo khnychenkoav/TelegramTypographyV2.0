@@ -6,16 +6,20 @@ import com.github.kotlintelegrambot.dispatcher.handlers.TextHandlerEnvironment
 import com.github.kotlintelegrambot.entities.ChatId
 import org.example.state.SessionManager
 import org.example.state.UserMode
+import org.example.utils.TextProvider
 
-class ResponseHandler(private val sessionManager: SessionManager) {
+class ResponseHandler(
+    private val sessionManager: SessionManager,
+    private val textProvider: TextProvider
+) {
+    private val keyboardFactory = KeyboardFactory(textProvider)
 
     fun onStartCommand(env: CommandHandlerEnvironment) {
         val chatId = env.message.chat.id
         sessionManager.resetSession(chatId)
-
         env.bot.sendMessage(
             chatId = ChatId.fromId(chatId),
-            text = "Здравствуйте! Я — виртуальный консультант типографии.\nКак я могу к Вам обращаться?"
+            text = textProvider.get("start.welcome")
         )
     }
 
@@ -31,8 +35,8 @@ class ResponseHandler(private val sessionManager: SessionManager) {
             UserMode.MAIN_MENU -> {
                 env.bot.sendMessage(
                     chatId = ChatId.fromId(chatId),
-                    text = "Пожалуйста, выберите один из вариантов в меню ниже.",
-                    replyMarkup = KeyboardFactory.buildMainMenu()
+                    text = textProvider.get("menu.prompt"),
+                    replyMarkup = keyboardFactory.buildMainMenu()
                 )
             }
         }
@@ -48,42 +52,50 @@ class ResponseHandler(private val sessionManager: SessionManager) {
 
         env.bot.sendMessage(
             chatId = ChatId.fromId(chatId),
-            text = "Приятно познакомиться, $name! Чем могу помочь?",
-            replyMarkup = KeyboardFactory.buildMainMenu()
+            text = textProvider.get("greeting.personal", name),
+            replyMarkup = keyboardFactory.buildMainMenu()
         )
     }
-
 
     fun onCallbackQuery(env: CallbackQueryHandlerEnvironment) {
         val chatId = env.callbackQuery.message?.chat?.id ?: return
         val callbackData = env.callbackQuery.data
         env.bot.answerCallbackQuery(env.callbackQuery.id)
+
         when (callbackData) {
             KeyboardFactory.START_CHAT_CALLBACK -> {
-                env.bot.sendMessage(ChatId.fromId(chatId), "Вы выбрали 'Начать диалог'. Этот функционал будет добавлен позже.")
+                env.bot.sendMessage(ChatId.fromId(chatId), textProvider.get("callback.chat.wip"))
             }
             KeyboardFactory.CALCULATE_ORDER_CALLBACK -> {
                 sessionManager.updateSession(chatId, sessionManager.getSession(chatId).copy(mode = UserMode.AWAITING_ORDER_DETAILS))
-                env.bot.sendMessage(ChatId.fromId(chatId), "Пожалуйста, опишите ваш заказ для расчета стоимости.")
+                env.bot.sendMessage(ChatId.fromId(chatId), textProvider.get("callback.calculate.prompt"))
             }
             KeyboardFactory.CONTACT_OPERATOR_CALLBACK -> {
                 sessionManager.updateSession(chatId, sessionManager.getSession(chatId).copy(mode = UserMode.AWAITING_OPERATOR_QUERY))
-                env.bot.sendMessage(ChatId.fromId(chatId), "Напишите ваш вопрос, и я передам его оператору.")
+                env.bot.sendMessage(ChatId.fromId(chatId), textProvider.get("callback.operator.prompt"))
             }
         }
     }
 
     private fun handleOrderDetails(env: TextHandlerEnvironment, text: String) {
         val chatId = env.message.chat.id
-        env.bot.sendMessage(ChatId.fromId(chatId), "Спасибо! Ваш заказ \"$text\" принят в обработку. Скоро здесь будет результат расчета.")
+        env.bot.sendMessage(ChatId.fromId(chatId), textProvider.get("order.received", text))
         sessionManager.updateSession(chatId, sessionManager.getSession(chatId).copy(mode = UserMode.MAIN_MENU))
-        env.bot.sendMessage(ChatId.fromId(chatId), "Чем еще могу помочь?", replyMarkup = KeyboardFactory.buildMainMenu())
+        env.bot.sendMessage(
+            chatId = ChatId.fromId(chatId),
+            text = textProvider.get("general.what_else"),
+            replyMarkup = keyboardFactory.buildMainMenu()
+        )
     }
 
     private fun handleOperatorQuery(env: TextHandlerEnvironment, text: String) {
         val chatId = env.message.chat.id
-        env.bot.sendMessage(ChatId.fromId(chatId), "Ваш вопрос \"$text\" передан оператору. Он скоро с вами свяжется.")
+        env.bot.sendMessage(ChatId.fromId(chatId), textProvider.get("operator.query.received", text))
         sessionManager.updateSession(chatId, sessionManager.getSession(chatId).copy(mode = UserMode.MAIN_MENU))
-        env.bot.sendMessage(ChatId.fromId(chatId), "Чем еще могу помочь?", replyMarkup = KeyboardFactory.buildMainMenu())
+        env.bot.sendMessage(
+            chatId = ChatId.fromId(chatId),
+            text = textProvider.get("general.what_else"),
+            replyMarkup = keyboardFactory.buildMainMenu()
+        )
     }
 }

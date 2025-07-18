@@ -24,4 +24,12 @@ kotlin {
 
 application {
     mainClass.set("MainKt")
+    applicationDefaultJvmArgs = listOf("-Dfile.encoding=UTF-8")
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    kotlinOptions {
+        freeCompilerArgs += "-Xjvm-default=all"
+        jvmTarget = "21"
+    }
 }
