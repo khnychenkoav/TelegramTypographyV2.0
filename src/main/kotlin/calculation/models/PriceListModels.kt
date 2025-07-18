@@ -86,3 +86,39 @@ data class UvPrinting(
 data class Surcharges(
     @SerialName("wood_surface_multiplier") val woodSurfaceMultiplier: Double
 )
+
+@Serializable
+data class OrderParameters(
+    @SerialName("product_type") val productType: String,
+    val shape: String? = null,
+    val size: String? = null,
+    val quantity: Int? = null,
+    val material: String? = null,
+    @SerialName("thickness_mm") val thicknessMm: Int? = null,
+    @SerialName("width_cm") val widthCm: Double? = null,
+    @SerialName("height_cm") val heightCm: Double? = null,
+    @SerialName("diameter_cm") val diameterCm: Double? = null,
+    @SerialName("printing_layers") val printingLayers: Int? = null,
+    @SerialName("printing_sides") val printingSides: Int? = null
+    // ... можно добавлять другие поля по мере необходимости
+)
+
+/**
+ * Результат расчета
+ */
+data class CalculationResult(
+    val items: List<CalculationItem>,
+    val totalWorkPrice: Double,
+    val totalMaterialPrice: Double,
+    val finalTotalPrice: Double,
+    val comments: List<String>
+)
+
+/**
+ * Детализация расчета по одной позиции
+ */
+data class CalculationItem(
+    val description: String,
+    val workPrice: Double,
+    val materialPrice: Double
+)

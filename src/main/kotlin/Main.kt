@@ -2,6 +2,7 @@ package org.example
 
 import org.example.bot.ResponseHandler
 import org.example.bot.TypographyBot
+import org.example.calculation.CalculatorService
 import org.example.calculation.PriceListProvider
 import org.example.processing.JobQueue
 import org.example.services.LlamaCliServiceImpl
@@ -16,10 +17,11 @@ fun main() {
     val textProvider = TextProvider("messages_ru.properties")
     val translationService = TranslationService()
     val priceListProvider = PriceListProvider()
+    val calculatorService = CalculatorService(priceListProvider)
     val localLlmService = LlamaCliServiceImpl(llamaBinaryPath, modelPath, translationService)
     val jobQueue = JobQueue(localLlmService)
     val sessionManager = SessionManager()
-    val responseHandler = ResponseHandler(sessionManager, textProvider, jobQueue)
+    val responseHandler = ResponseHandler(sessionManager, textProvider, jobQueue, calculatorService)
     val typographyBot = TypographyBot(responseHandler)
     typographyBot.start()
     println("Бот запущен!")

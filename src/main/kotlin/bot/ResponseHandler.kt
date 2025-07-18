@@ -9,6 +9,7 @@ import org.example.state.UserMode
 import org.example.utils.TextProvider
 import com.github.kotlintelegrambot.Bot
 import com.github.kotlintelegrambot.entities.InlineKeyboardMarkup
+import org.example.calculation.CalculatorService
 import org.example.processing.JobQueue
 import org.example.processing.LlmJob
 import org.slf4j.LoggerFactory
@@ -16,7 +17,8 @@ import org.slf4j.LoggerFactory
 class ResponseHandler(
     private val sessionManager: SessionManager,
     private val textProvider: TextProvider,
-    private val jobQueue: JobQueue
+    private val jobQueue: JobQueue,
+    private val calculatorService: CalculatorService
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
