@@ -6,28 +6,39 @@ import com.github.kotlintelegrambot.dispatch
 import com.github.kotlintelegrambot.dispatcher.callbackQuery
 import com.github.kotlintelegrambot.dispatcher.command
 import com.github.kotlintelegrambot.dispatcher.text
+import com.github.kotlintelegrambot.entities.ChatId
 import com.github.kotlintelegrambot.logging.LogLevel
 import org.example.utils.BOT_TOKEN
 
 class TypographyBot(private val responseHandler: ResponseHandler) {
 
-    private val bot: Bot = bot {
-        token = BOT_TOKEN
-        logLevel = LogLevel.Network.Body
+    private val bot: Bot
 
-        dispatch {
-            command("start") {
-                responseHandler.onStartCommand(this)
-            }
+    init {
+        responseHandler.sendMessage = { chatId, text, replyMarkup ->
+            bot.sendMessage(
+                chatId = ChatId.fromId(chatId),
+                text = text,
+                replyMarkup = replyMarkup
+            )
+        }
 
-            text {
-                if (message.text?.startsWith("/") != true) {
-                    responseHandler.onTextMessage(this)
+        bot = bot {
+            token = BOT_TOKEN
+            logLevel = LogLevel.Network.Body
+
+            dispatch {
+                command("start") {
+                    responseHandler.onStartCommand(this)
                 }
-            }
-
-            callbackQuery {
-                responseHandler.onCallbackQuery(this)
+                text {
+                    if (message.text?.startsWith("/") != true) {
+                        responseHandler.onTextMessage(this)
+                    }
+                }
+                callbackQuery {
+                    responseHandler.onCallbackQuery(this)
+                }
             }
         }
     }

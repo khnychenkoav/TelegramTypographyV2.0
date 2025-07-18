@@ -7,12 +7,22 @@ import com.github.kotlintelegrambot.entities.ChatId
 import org.example.state.SessionManager
 import org.example.state.UserMode
 import org.example.utils.TextProvider
+import com.github.kotlintelegrambot.Bot
+import com.github.kotlintelegrambot.entities.InlineKeyboardMarkup
+import org.example.processing.JobQueue
+import org.example.processing.LlmJob
+import org.slf4j.LoggerFactory
 
 class ResponseHandler(
     private val sessionManager: SessionManager,
-    private val textProvider: TextProvider
+    private val textProvider: TextProvider,
+    private val jobQueue: JobQueue
 ) {
+    private val logger = LoggerFactory.getLogger(javaClass)
+
     private val keyboardFactory = KeyboardFactory(textProvider)
+
+    lateinit var sendMessage: (chatId: Long, text: String, replyMarkup: InlineKeyboardMarkup?) -> Unit
 
     fun onStartCommand(env: CommandHandlerEnvironment) {
         val chatId = env.message.chat.id
@@ -32,6 +42,7 @@ class ResponseHandler(
             UserMode.AWAITING_NAME -> handleNameInput(env, text)
             UserMode.AWAITING_ORDER_DETAILS -> handleOrderDetails(env, text)
             UserMode.AWAITING_OPERATOR_QUERY -> handleOperatorQuery(env, text)
+            UserMode.LLM_CHAT -> handleLlmChat(env, text)
             UserMode.MAIN_MENU -> {
                 env.bot.sendMessage(
                     chatId = ChatId.fromId(chatId),
@@ -64,7 +75,8 @@ class ResponseHandler(
 
         when (callbackData) {
             KeyboardFactory.START_CHAT_CALLBACK -> {
-                env.bot.sendMessage(ChatId.fromId(chatId), textProvider.get("callback.chat.wip"))
+                sessionManager.updateSession(chatId, sessionManager.getSession(chatId).copy(mode = UserMode.LLM_CHAT))
+                env.bot.sendMessage(ChatId.fromId(chatId), textProvider.get("callback.chat.prompt", "Напишите ваш вопрос."))
             }
             KeyboardFactory.CALCULATE_ORDER_CALLBACK -> {
                 sessionManager.updateSession(chatId, sessionManager.getSession(chatId).copy(mode = UserMode.AWAITING_ORDER_DETAILS))
@@ -74,6 +86,26 @@ class ResponseHandler(
                 sessionManager.updateSession(chatId, sessionManager.getSession(chatId).copy(mode = UserMode.AWAITING_OPERATOR_QUERY))
                 env.bot.sendMessage(ChatId.fromId(chatId), textProvider.get("callback.operator.prompt"))
             }
+        }
+    }
+
+    private fun handleLlmChat(env: TextHandlerEnvironment, text: String) {
+        val chatId = env.message.chat.id
+
+        val job = LlmJob(
+            chatId = chatId,
+            userText = text,
+            systemPrompt = textProvider.get("llm.system_prompt.chat"),
+            onResult = { result ->
+                logger.info("Колбэк onResult вызван для чата {}. Отправляю результат пользователю.", chatId)
+                sendMessage(chatId, result, null)
+            }
+        )
+
+        if (jobQueue.submit(job)) {
+            env.bot.sendMessage(ChatId.fromId(chatId), textProvider.get("llm.in_queue"))
+        } else {
+            env.bot.sendMessage(ChatId.fromId(chatId), textProvider.get("llm.error"))
         }
     }
 

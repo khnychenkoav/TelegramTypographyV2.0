@@ -4,7 +4,8 @@ enum class UserMode {
     AWAITING_NAME,
     MAIN_MENU,
     AWAITING_ORDER_DETAILS,
-    AWAITING_OPERATOR_QUERY
+    AWAITING_OPERATOR_QUERY,
+    LLM_CHAT
 }
 
 data class UserSession(
