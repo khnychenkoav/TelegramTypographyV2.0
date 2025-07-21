@@ -102,11 +102,81 @@ class CalculatorService(
         return errors
     }
 
-
     private fun calculateDigitalPrinting(params: OrderParameters): CalculationOutcome {
-        logger.warn("Метод calculateDigitalPrinting еще не реализован.")
-        return notImplementedResult("Цифровая печать")
+        val validationErrors = validateDigitalPrintingParams(params)
+        if (validationErrors.isNotEmpty()) {
+            return CalculationOutcome.Failure(validationErrors)
+        }
+
+        val quantity = params.quantity!!
+        val paperTypeKey = params.material!!
+        val printingSides = params.printingSides!!
+
+        val paperPrices = prices.products.digitalPrinting.paperType?.get(paperTypeKey)
+        if (paperPrices == null) {
+            val knownPaperTypes = prices.products.digitalPrinting.paperType?.keys?.joinToString(", ") ?: "нет доступных"
+            return CalculationOutcome.Failure(
+                listOf(
+                    textProvider.get("calculator.error.unknown_paper_type", paperTypeKey),
+                    textProvider.get("calculator.error.available_paper_types", knownPaperTypes)
+                )
+            )
+        }
+
+        val priceTiers = when (printingSides) {
+            1 -> paperPrices.oneSided
+            2 -> paperPrices.twoSided
+            else -> {
+                logger.error("Некорректное значение printingSides ($printingSides) прошло валидацию.")
+                return CalculationOutcome.Failure(listOf(textProvider.get("calculator.error.invalid_printing_sides")))
+            }
+        }
+
+        val pricePerItem = priceTiers.find { quantity in it.from..it.to }?.pricePerItem
+        if (pricePerItem == null) {
+            return CalculationOutcome.Failure(
+                listOf(textProvider.get("calculator.error.quantity_out_of_range", quantity))
+            )
+        }
+
+        val totalPrice = pricePerItem * quantity
+        val sidesDescription = if (printingSides == 1) "односторонняя 4+0" else "двухсторонняя 4+4"
+
+        val item = CalculationItem(
+            description = "Цифровая печать: '$paperTypeKey' ($sidesDescription), $quantity листов по $pricePerItem ₽",
+            workPrice = totalPrice,
+            materialPrice = 0.0
+        )
+
+        val result = CalculationResult(
+            items = listOf(item),
+            totalWorkPrice = totalPrice,
+            totalMaterialPrice = 0.0,
+            finalTotalPrice = totalPrice,
+            comments = listOf("Расчет выполнен для печати на листах формата SRA3 (320x450 мм).")
+        )
+
+        return CalculationOutcome.Success(result)
     }
+
+    private fun validateDigitalPrintingParams(params: OrderParameters): List<String> {
+        val errors = mutableListOf<String>()
+
+        if (params.quantity == null || params.quantity <= 0) {
+            errors.add(textProvider.get("calculator.error.no_quantity"))
+        }
+        if (params.material.isNullOrBlank()) {
+            errors.add(textProvider.get("calculator.error.no_paper_type"))
+        }
+        when (params.printingSides) {
+            null -> errors.add(textProvider.get("calculator.error.no_printing_sides"))
+            !in 1..2 -> errors.add(textProvider.get("calculator.error.invalid_printing_sides"))
+        }
+
+        return errors
+    }
+
+
 
     private fun calculateCutting(params: OrderParameters): CalculationOutcome {
         logger.warn("Метод calculateCutting еще не реализован.")
@@ -119,6 +189,6 @@ class CalculatorService(
     }
 
     private fun notImplementedResult(productName: String): CalculationOutcome.Failure {
-        return CalculationOutcome.Failure(listOf("Расчет для продукта '$productName' еще не реализован."))
+        return CalculationOutcome.Failure(listOf(textProvider.get("calculator.error.not_implemented", productName)))
     }
 }
