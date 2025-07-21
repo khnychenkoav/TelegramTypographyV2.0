@@ -2,9 +2,13 @@ package org.example.bot
 
 import com.github.kotlintelegrambot.entities.InlineKeyboardMarkup
 import com.github.kotlintelegrambot.entities.keyboard.InlineKeyboardButton
+import org.example.calculation.PriceListProvider
 import org.example.utils.TextProvider
 
-class KeyboardFactory(private val textProvider: TextProvider) {
+class KeyboardFactory(
+    private val textProvider: TextProvider,
+    private val prices: PriceListProvider
+) {
 
     companion object {
         const val START_CHAT_CALLBACK = "start_chat"
@@ -15,6 +19,8 @@ class KeyboardFactory(private val textProvider: TextProvider) {
         const val CALC_PT_DIGITAL_PRINTING_CALLBACK = "calc_pt_digital_printing"
         const val CALC_PT_CUTTING_CALLBACK = "calc_pt_cutting"
         const val CALC_PT_CUTTING_AND_PRINTING_CALLBACK = "calc_pt_cutting_and_printing"
+
+        const val CALC_BADGE_TYPE_PREFIX = "calc_badge_type_"
     }
 
     fun buildMainMenu(): InlineKeyboardMarkup {
@@ -67,5 +73,18 @@ class KeyboardFactory(private val textProvider: TextProvider) {
                 )
             )
         )
+    }
+
+    fun buildCalcBadgeTypeMenu(): InlineKeyboardMarkup? {
+        val badgeTypes = prices.products.badges.types?.keys ?: return null
+
+        val buttons = badgeTypes.map { badgeTypeKey ->
+            InlineKeyboardButton.CallbackData(
+                text = badgeTypeKey,
+                callbackData = "$CALC_BADGE_TYPE_PREFIX$badgeTypeKey"
+            )
+        }
+
+        return InlineKeyboardMarkup.create(buttons.chunked(2))
     }
 }

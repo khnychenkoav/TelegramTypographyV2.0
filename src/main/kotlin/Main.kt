@@ -21,7 +21,7 @@ fun main() {
     val localLlmService = LlamaCliServiceImpl(llamaBinaryPath, modelPath, translationService)
     val jobQueue = JobQueue(localLlmService)
     val sessionManager = SessionManager()
-    val responseHandler = ResponseHandler(sessionManager, textProvider, jobQueue, calculatorService)
+    val responseHandler = ResponseHandler(sessionManager, textProvider, jobQueue, calculatorService, priceListProvider)
     val typographyBot = TypographyBot(responseHandler)
     typographyBot.start()
     println("Бот запущен!")

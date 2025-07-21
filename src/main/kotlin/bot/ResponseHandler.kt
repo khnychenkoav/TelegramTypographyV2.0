@@ -7,6 +7,7 @@ import com.github.kotlintelegrambot.dispatcher.handlers.TextHandlerEnvironment
 import com.github.kotlintelegrambot.entities.ChatId
 import com.github.kotlintelegrambot.entities.InlineKeyboardMarkup
 import org.example.calculation.CalculatorService
+import org.example.calculation.PriceListProvider
 import org.example.processing.JobQueue
 import org.example.processing.LlmJob
 import org.example.state.CalculationData
@@ -19,10 +20,11 @@ class ResponseHandler(
     private val sessionManager: SessionManager,
     private val textProvider: TextProvider,
     private val jobQueue: JobQueue,
-    private val calculatorService: CalculatorService
+    private val calculatorService: CalculatorService,
+    private val priceListProvider: PriceListProvider
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
-    private val keyboardFactory = KeyboardFactory(textProvider)
+    private val keyboardFactory = KeyboardFactory(textProvider, priceListProvider)
 
     lateinit var sendMessage: (chatId: Long, text: String, replyMarkup: InlineKeyboardMarkup?) -> Unit
 
@@ -63,15 +65,22 @@ class ResponseHandler(
         val callbackData = env.callbackQuery.data
         env.bot.answerCallbackQuery(env.callbackQuery.id)
 
-        when (callbackData) {
-            KeyboardFactory.START_CHAT_CALLBACK -> startLlmChat(env.bot, chatId)
-            KeyboardFactory.CONTACT_OPERATOR_CALLBACK -> startOperatorQuery(env.bot, chatId)
-            KeyboardFactory.CALCULATE_ORDER_CALLBACK -> startCalculation(env.bot, chatId)
+        val session = sessionManager.getSession(chatId)
 
-            KeyboardFactory.CALC_PT_BADGE_CALLBACK -> TODO("Обработать выбор значков")
-            KeyboardFactory.CALC_PT_DIGITAL_PRINTING_CALLBACK -> TODO("Обработать выбор цифровой печати")
-            KeyboardFactory.CALC_PT_CUTTING_CALLBACK -> TODO("Обработать выбор резки")
-            KeyboardFactory.CALC_PT_CUTTING_AND_PRINTING_CALLBACK -> TODO("Обработать выбор резки с печатью")
+        when {
+            callbackData == KeyboardFactory.START_CHAT_CALLBACK -> startLlmChat(env.bot, chatId)
+            callbackData == KeyboardFactory.CONTACT_OPERATOR_CALLBACK -> startOperatorQuery(env.bot, chatId)
+            callbackData == KeyboardFactory.CALCULATE_ORDER_CALLBACK -> startCalculation(env.bot, chatId)
+
+            callbackData == KeyboardFactory.CALC_PT_BADGE_CALLBACK -> handleProductTypeSelected(env.bot, chatId, "badge")
+            callbackData == KeyboardFactory.CALC_PT_DIGITAL_PRINTING_CALLBACK -> TODO("Будет реализовано позже")
+            callbackData == KeyboardFactory.CALC_PT_CUTTING_CALLBACK -> TODO("Будет реализовано позже")
+            callbackData == KeyboardFactory.CALC_PT_CUTTING_AND_PRINTING_CALLBACK -> TODO("Будет реализовано позже")
+
+            callbackData.startsWith(KeyboardFactory.CALC_BADGE_TYPE_PREFIX) -> {
+                val badgeType = callbackData.removePrefix(KeyboardFactory.CALC_BADGE_TYPE_PREFIX)
+                TODO("Обработать выбор типа значка: $badgeType")
+            }
         }
     }
 
@@ -155,6 +164,29 @@ class ResponseHandler(
             sendMessage(chatId, textProvider.get("llm.in_queue"), null)
         } else {
             sendMessage(chatId, textProvider.get("llm.error"), null)
+        }
+    }
+
+    private fun handleProductTypeSelected(bot: Bot, chatId: Long, productType: String) {
+        val session = sessionManager.getSession(chatId)
+        val calculationData = session.currentCalculation ?: run {
+            logger.error("currentCalculation is null for chat $chatId, aborting.")
+            return
+        }
+
+        calculationData.productType = productType
+
+        when (productType) {
+            "badge" -> {
+                sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_BADGE_TYPE))
+                val keyboard = keyboardFactory.buildCalcBadgeTypeMenu()
+                bot.sendMessage(
+                    chatId = ChatId.fromId(chatId),
+                    text = textProvider.get("calc.prompt.choose_badge_type"),
+                    replyMarkup = keyboard
+                )
+            }
+            else -> TODO("Обработка для продукта $productType еще не реализована")
         }
     }
 }
