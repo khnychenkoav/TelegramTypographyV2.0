@@ -51,16 +51,20 @@ class ResponseHandler(
             UserMode.MAIN_MENU -> showMainMenu(env.bot, chatId)
             UserMode.LLM_CHAT -> handleLlmChat(env, text)
             UserMode.AWAITING_OPERATOR_QUERY -> handleOperatorQuery(env, text)
-
             UserMode.CALC_AWAITING_QUANTITY -> handleQuantitySelected(env.bot, chatId, text)
-
             UserMode.CALC_AWAITING_PRODUCT_TYPE -> {
                 sendMessage(chatId, textProvider.get("calc.prompt.choose_product"), keyboardFactory.buildCalcProductTypeMenu())
             }
-
             UserMode.CALC_AWAITING_BADGE_TYPE -> {
                 sendMessage(chatId, textProvider.get("calc.prompt.choose_badge_type"), keyboardFactory.buildCalcBadgeTypeMenu())
             }
+            UserMode.CALC_AWAITING_PAPER_TYPE -> {
+                sendMessage(chatId, textProvider.get("calc.prompt.choose_paper_type"), keyboardFactory.buildCalcPaperTypeMenu())
+            }
+            UserMode.CALC_AWAITING_PRINT_SIDES -> {
+                sendMessage(chatId, textProvider.get("calc.prompt.choose_print_sides"), keyboardFactory.buildCalcPrintSidesMenu())
+            }
+
             else -> {
                 logger.warn("Получено текстовое сообщение в необрабатываемом режиме: {}", session.mode)
                 sendMessage(chatId, "Пожалуйста, используйте кнопки для выбора.", null)
@@ -77,15 +81,24 @@ class ResponseHandler(
             callbackData == KeyboardFactory.START_CHAT_CALLBACK -> startLlmChat(env.bot, chatId)
             callbackData == KeyboardFactory.CONTACT_OPERATOR_CALLBACK -> startOperatorQuery(env.bot, chatId)
             callbackData == KeyboardFactory.CALCULATE_ORDER_CALLBACK -> startCalculation(env.bot, chatId)
-
             callbackData == KeyboardFactory.CALC_PT_BADGE_CALLBACK -> handleProductTypeSelected(env.bot, chatId, "badge")
-            callbackData == KeyboardFactory.CALC_PT_DIGITAL_PRINTING_CALLBACK -> TODO("Будет реализовано позже")
+            callbackData == KeyboardFactory.CALC_PT_DIGITAL_PRINTING_CALLBACK -> handleProductTypeSelected(env.bot, chatId, "digital_printing")
             callbackData == KeyboardFactory.CALC_PT_CUTTING_CALLBACK -> TODO("Будет реализовано позже")
             callbackData == KeyboardFactory.CALC_PT_CUTTING_AND_PRINTING_CALLBACK -> TODO("Будет реализовано позже")
 
             callbackData.startsWith(KeyboardFactory.CALC_BADGE_TYPE_PREFIX) -> {
                 val badgeType = callbackData.removePrefix(KeyboardFactory.CALC_BADGE_TYPE_PREFIX)
                 handleBadgeTypeSelected(env.bot, chatId, badgeType)
+            }
+            callbackData.startsWith(KeyboardFactory.CALC_PAPER_TYPE_PREFIX) -> {
+                val paperType = callbackData.removePrefix(KeyboardFactory.CALC_PAPER_TYPE_PREFIX)
+                handlePaperTypeSelected(env.bot, chatId, paperType)
+            }
+            callbackData.startsWith(KeyboardFactory.CALC_PRINT_SIDES_PREFIX) -> {
+                val sides = callbackData.removePrefix(KeyboardFactory.CALC_PRINT_SIDES_PREFIX).toIntOrNull()
+                if (sides != null) {
+                    handlePrintSidesSelected(env.bot, chatId, sides)
+                }
             }
         }
     }
@@ -192,6 +205,15 @@ class ResponseHandler(
                     replyMarkup = keyboard
                 )
             }
+            "digital_printing" -> {
+                sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_PAPER_TYPE))
+                val keyboard = keyboardFactory.buildCalcPaperTypeMenu()
+                bot.sendMessage(
+                    chatId = ChatId.fromId(chatId),
+                    text = textProvider.get("calc.prompt.choose_paper_type"),
+                    replyMarkup = keyboard
+                )
+            }
             else -> TODO("Обработка для продукта $productType еще не реализована")
         }
     }
@@ -209,6 +231,30 @@ class ResponseHandler(
             // TODO: Сообщить об ошибке и вернуться в меню
             return
         }
+
+        sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_QUANTITY))
+        bot.sendMessage(ChatId.fromId(chatId), textProvider.get("calc.prompt.enter_quantity"))
+    }
+
+    private fun handlePaperTypeSelected(bot: Bot, chatId: Long, paperType: String) {
+        val session = sessionManager.getSession(chatId)
+        val calcData = session.currentCalculation ?: return
+
+        calcData.material = paperType
+
+        sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_PRINT_SIDES))
+        bot.sendMessage(
+            chatId = ChatId.fromId(chatId),
+            text = textProvider.get("calc.prompt.choose_print_sides"),
+            replyMarkup = keyboardFactory.buildCalcPrintSidesMenu()
+        )
+    }
+
+    private fun handlePrintSidesSelected(bot: Bot, chatId: Long, sides: Int) {
+        val session = sessionManager.getSession(chatId)
+        val calcData = session.currentCalculation ?: return
+
+        calcData.printingSides = sides
 
         sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_QUANTITY))
         bot.sendMessage(ChatId.fromId(chatId), textProvider.get("calc.prompt.enter_quantity"))

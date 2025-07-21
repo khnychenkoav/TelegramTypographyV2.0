@@ -21,6 +21,8 @@ class KeyboardFactory(
         const val CALC_PT_CUTTING_AND_PRINTING_CALLBACK = "calc_pt_cutting_and_printing"
 
         const val CALC_BADGE_TYPE_PREFIX = "calc_badge_type_"
+        const val CALC_PAPER_TYPE_PREFIX = "calc_paper_type_"
+        const val CALC_PRINT_SIDES_PREFIX = "calc_print_sides_"
     }
 
     fun buildMainMenu(): InlineKeyboardMarkup {
@@ -86,5 +88,31 @@ class KeyboardFactory(
         }
 
         return InlineKeyboardMarkup.create(buttons.chunked(2))
+    }
+
+    fun buildCalcPaperTypeMenu(): InlineKeyboardMarkup? {
+        val paperTypes = prices.products.digitalPrinting.paperType?.keys ?: return null
+        val buttons = paperTypes.map { paperTypeKey ->
+            InlineKeyboardButton.CallbackData(
+                text = paperTypeKey,
+                callbackData = "$CALC_PAPER_TYPE_PREFIX$paperTypeKey"
+            )
+        }
+        return InlineKeyboardMarkup.create(buttons.chunked(2))
+    }
+
+    fun buildCalcPrintSidesMenu(): InlineKeyboardMarkup {
+        return InlineKeyboardMarkup.create(
+            listOf(
+                InlineKeyboardButton.CallbackData(
+                    text = "Односторонняя (4+0)",
+                    callbackData = "${CALC_PRINT_SIDES_PREFIX}1"
+                ),
+                InlineKeyboardButton.CallbackData(
+                    text = "Двухсторонняя (4+4)",
+                    callbackData = "${CALC_PRINT_SIDES_PREFIX}2"
+                )
+            )
+        )
     }
 }
