@@ -176,12 +176,123 @@ class CalculatorService(
         return errors
     }
 
-
-
     private fun calculateCutting(params: OrderParameters): CalculationOutcome {
-        logger.warn("Метод calculateCutting еще не реализован.")
-        return notImplementedResult("Резка")
+        val validationErrors = validateCuttingParams(params)
+        if (validationErrors.isNotEmpty()) {
+            return CalculationOutcome.Failure(validationErrors)
+        }
+
+        val material = params.material!!
+        val thickness = params.thicknessMm!!
+
+        val (areaSqm, perimeterM) = calculateDimensions(params)
+
+        val materialKey = "${material}_${thickness}мм".lowercase()
+        val materialPricePerSqm = findMaterialPricePerSqm(materialKey)
+            ?: return CalculationOutcome.Failure(listOf(textProvider.get("calculator.error.unknown_material_key", materialKey)))
+
+        val totalMaterialPrice = areaSqm * materialPricePerSqm
+        val materialItem = CalculationItem("Материал: $materialKey", 0.0, totalMaterialPrice)
+
+        val cuttingPricePerMeter = findCuttingPricePerMeter(material, thickness)
+            ?: return CalculationOutcome.Failure(listOf(textProvider.get("calculator.error.unknown_operation_key", "$material ${thickness}мм")))
+
+        var totalWorkPrice = perimeterM * cuttingPricePerMeter
+        val comments = mutableListOf<String>()
+
+        val minOrderPrice = prices.operations.generalRules.minOrderOneMachine
+        if (totalWorkPrice < minOrderPrice) {
+            comments.add(textProvider.get("calculator.comment.min_order_applied", minOrderPrice.toInt()))
+            totalWorkPrice = minOrderPrice
+        }
+        val workItem = CalculationItem("Работа: Фрезерная резка", totalWorkPrice, 0.0)
+
+        val finalPrice = totalMaterialPrice + totalWorkPrice
+        val result = CalculationResult(
+            items = listOf(materialItem, workItem),
+            totalWorkPrice = totalWorkPrice,
+            totalMaterialPrice = totalMaterialPrice,
+            finalTotalPrice = finalPrice,
+            comments = comments.ifEmpty { listOf("Расчет выполнен согласно прайс-листу.") }
+        )
+
+        return CalculationOutcome.Success(result)
     }
+
+    private fun validateCuttingParams(params: OrderParameters): List<String> {
+        val errors = mutableListOf<String>()
+
+        if (params.material.isNullOrBlank()) {
+            errors.add(textProvider.get("calculator.error.no_paper_type"))
+        }
+        if (params.thicknessMm == null || params.thicknessMm <= 0) {
+            errors.add(textProvider.get("calculator.error.no_thickness"))
+        }
+
+        val hasRectDimensions = params.widthCm != null && params.heightCm != null && params.widthCm > 0 && params.heightCm > 0
+        val hasCircleDimensions = params.diameterCm != null && params.diameterCm > 0
+
+        if (!hasRectDimensions && !hasCircleDimensions) {
+            errors.add(textProvider.get("calculator.error.no_dimensions"))
+        }
+
+        return errors
+    }
+
+    /**
+     * Рассчитывает площадь (в м²) и периметр (в м) на основе параметров заказа.
+     * @return Pair<Площадь, Периметр>
+     */
+    private fun calculateDimensions(params: OrderParameters): Pair<Double, Double> {
+        return if (params.diameterCm != null && params.diameterCm > 0) {
+            val diameterM = params.diameterCm / 100.0
+            val radiusM = diameterM / 2.0
+            val area = kotlin.math.PI * radiusM * radiusM
+            val perimeter = kotlin.math.PI * diameterM
+            area to perimeter
+        } else {
+            val widthM = params.widthCm!! / 100.0
+            val heightM = params.heightCm!! / 100.0
+            val area = widthM * heightM
+            val perimeter = 2 * (widthM + heightM)
+            area to perimeter
+        }
+    }
+
+    /**
+     * Ищет цену за квадратный метр материала по его ключу (например, "фанера_3мм").
+     */
+    private fun findMaterialPricePerSqm(materialKey: String): Double? {
+        val allMaterials = prices.materials.wood + prices.materials.plastic + prices.materials.composite +
+                prices.materials.film + prices.materials.magnetic + prices.materials.foam + prices.materials.adhesive
+        return allMaterials[materialKey]
+    }
+
+    /**
+     * Ищет цену за погонный метр резки, подбирая подходящий диапазон.
+     * Например, для "фанера" и толщины 4мм найдет ключ "фанера_3-6мм".
+     */
+    private fun findCuttingPricePerMeter(material: String, thickness: Int): Double? {
+        val cuttingPrices = prices.operations.cutting.frezernaya.prices
+
+        val matchingKey = cuttingPrices.keys.find { key ->
+            if (!key.startsWith(material, ignoreCase = true)) return@find false
+
+            val thicknessRangeString = key.substringAfterLast('_').removeSuffix("мм")
+            val parts = thicknessRangeString.split('-')
+            if (parts.size == 2) {
+                val from = parts[0].toIntOrNull()
+                val to = parts[1].toIntOrNull()
+                if (from != null && to != null) {
+                    return@find thickness in from..to
+                }
+            }
+            false
+        }
+
+        return matchingKey?.let { cuttingPrices[it] }
+    }
+
 
     private fun calculateCuttingAndPrinting(params: OrderParameters): CalculationOutcome {
         logger.warn("Метод calculateCuttingAndPrinting еще не реализован.")
