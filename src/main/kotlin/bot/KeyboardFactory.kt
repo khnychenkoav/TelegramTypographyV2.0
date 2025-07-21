@@ -23,6 +23,8 @@ class KeyboardFactory(
         const val CALC_BADGE_TYPE_PREFIX = "calc_badge_type_"
         const val CALC_PAPER_TYPE_PREFIX = "calc_paper_type_"
         const val CALC_PRINT_SIDES_PREFIX = "calc_print_sides_"
+        const val CALC_MATERIAL_CATEGORY_PREFIX = "calc_mat_cat_"
+        const val CALC_MATERIAL_PREFIX = "calc_material_"
     }
 
     fun buildMainMenu(): InlineKeyboardMarkup {
@@ -114,5 +116,46 @@ class KeyboardFactory(
                 )
             )
         )
+    }
+
+    fun buildCalcMaterialCategoryMenu(): InlineKeyboardMarkup {
+        val categories = mapOf(
+            "wood" to "Дерево, МДФ",
+            "plastic" to "Пластик, Акрил",
+            "composite" to "Композит",
+            "film" to "Пленка",
+            "magnetic" to "Магнитный винил",
+            "foam" to "Вспененные материалы",
+            "adhesive" to "Клеевые материалы"
+        )
+
+        val buttons = categories.map { (key, name) ->
+            InlineKeyboardButton.CallbackData(
+                text = name,
+                callbackData = "$CALC_MATERIAL_CATEGORY_PREFIX$key"
+            )
+        }
+        return InlineKeyboardMarkup.create(buttons.chunked(2))
+    }
+
+    fun buildCalcMaterialMenu(category: String): InlineKeyboardMarkup? {
+        val materialsMap = when (category) {
+            "wood" -> prices.materials.wood
+            "plastic" -> prices.materials.plastic
+            "composite" -> prices.materials.composite
+            "film" -> prices.materials.film
+            "magnetic" -> prices.materials.magnetic
+            "foam" -> prices.materials.foam
+            "adhesive" -> prices.materials.adhesive
+            else -> return null
+        }
+
+        val buttons = materialsMap.keys.map { materialKey ->
+            InlineKeyboardButton.CallbackData(
+                text = materialKey,
+                callbackData = "$CALC_MATERIAL_PREFIX$materialKey"
+            )
+        }
+        return InlineKeyboardMarkup.create(buttons.chunked(2))
     }
 }

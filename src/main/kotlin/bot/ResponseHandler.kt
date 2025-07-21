@@ -64,6 +64,13 @@ class ResponseHandler(
             UserMode.CALC_AWAITING_PRINT_SIDES -> {
                 sendMessage(chatId, textProvider.get("calc.prompt.choose_print_sides"), keyboardFactory.buildCalcPrintSidesMenu())
             }
+            UserMode.CALC_AWAITING_DIMENSIONS -> handleDimensionsSelected(env.bot, chatId, text)
+            UserMode.CALC_AWAITING_MATERIAL_CATEGORY -> {
+                sendMessage(chatId, textProvider.get("calc.prompt.choose_material_category"), keyboardFactory.buildCalcMaterialCategoryMenu())
+            }
+            UserMode.CALC_AWAITING_MATERIAL_AND_THICKNESS -> {
+                sendMessage(chatId, "Пожалуйста, выберите материал из списка.", null)
+            }
 
             else -> {
                 logger.warn("Получено текстовое сообщение в необрабатываемом режиме: {}", session.mode)
@@ -83,7 +90,7 @@ class ResponseHandler(
             callbackData == KeyboardFactory.CALCULATE_ORDER_CALLBACK -> startCalculation(env.bot, chatId)
             callbackData == KeyboardFactory.CALC_PT_BADGE_CALLBACK -> handleProductTypeSelected(env.bot, chatId, "badge")
             callbackData == KeyboardFactory.CALC_PT_DIGITAL_PRINTING_CALLBACK -> handleProductTypeSelected(env.bot, chatId, "digital_printing")
-            callbackData == KeyboardFactory.CALC_PT_CUTTING_CALLBACK -> TODO("Будет реализовано позже")
+            callbackData == KeyboardFactory.CALC_PT_CUTTING_CALLBACK -> handleProductTypeSelected(env.bot, chatId, "cutting")
             callbackData == KeyboardFactory.CALC_PT_CUTTING_AND_PRINTING_CALLBACK -> TODO("Будет реализовано позже")
 
             callbackData.startsWith(KeyboardFactory.CALC_BADGE_TYPE_PREFIX) -> {
@@ -99,6 +106,14 @@ class ResponseHandler(
                 if (sides != null) {
                     handlePrintSidesSelected(env.bot, chatId, sides)
                 }
+            }
+            callbackData.startsWith(KeyboardFactory.CALC_MATERIAL_CATEGORY_PREFIX) -> {
+                val category = callbackData.removePrefix(KeyboardFactory.CALC_MATERIAL_CATEGORY_PREFIX)
+                handleMaterialCategorySelected(env.bot, chatId, category)
+            }
+            callbackData.startsWith(KeyboardFactory.CALC_MATERIAL_PREFIX) -> {
+                val materialKey = callbackData.removePrefix(KeyboardFactory.CALC_MATERIAL_PREFIX)
+                handleMaterialSelected(env.bot, chatId, materialKey)
             }
         }
     }
@@ -214,6 +229,14 @@ class ResponseHandler(
                     replyMarkup = keyboard
                 )
             }
+            "cutting" -> {
+                sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_MATERIAL_CATEGORY))
+                bot.sendMessage(
+                    chatId = ChatId.fromId(chatId),
+                    text = textProvider.get("calc.prompt.choose_material_category"),
+                    replyMarkup = keyboardFactory.buildCalcMaterialCategoryMenu()
+                )
+            }
             else -> TODO("Обработка для продукта $productType еще не реализована")
         }
     }
@@ -271,6 +294,72 @@ class ResponseHandler(
         }
 
         calcData.quantity = quantity
+
+        finishCalculation(bot, chatId)
+    }
+
+    private fun handleMaterialCategorySelected(bot: Bot, chatId: Long, category: String) {
+        val session = sessionManager.getSession(chatId)
+        sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_MATERIAL_AND_THICKNESS))
+
+        val keyboard = keyboardFactory.buildCalcMaterialMenu(category)
+        if (keyboard == null) {
+            logger.error("Не удалось создать клавиатуру для категории материалов '$category'")
+            // TODO: Сообщить об ошибке
+            return
+        }
+
+        bot.sendMessage(
+            chatId = ChatId.fromId(chatId),
+            text = textProvider.get("calc.prompt.choose_material"),
+            replyMarkup = keyboard
+        )
+    }
+
+    private fun handleMaterialSelected(bot: Bot, chatId: Long, materialKey: String) {
+        val session = sessionManager.getSession(chatId)
+        val calcData = session.currentCalculation ?: return
+
+        val parts = materialKey.split('_')
+        val thicknessString = parts.lastOrNull()?.removeSuffix("мм")
+
+        if (parts.size < 2 || thicknessString == null) {
+            logger.error("Некорректный формат materialKey: $materialKey")
+            // TODO: обработать ошибку
+            return
+        }
+
+        calcData.material = parts.dropLast(1).joinToString("_")
+        calcData.thicknessMm = thicknessString.toIntOrNull()
+
+        sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_DIMENSIONS))
+        bot.sendMessage(
+            ChatId.fromId(chatId),
+            textProvider.get("calc.prompt.enter_dimensions_rect", materialKey) + "\nИли введите диаметр для круга."
+        )
+    }
+
+    private fun handleDimensionsSelected(bot: Bot, chatId: Long, text: String) {
+        val session = sessionManager.getSession(chatId)
+        val calcData = session.currentCalculation ?: return
+
+        val parts = text.trim().split(Regex("\\s+")).mapNotNull { it.toDoubleOrNull() }
+
+        when (parts.size) {
+            2 -> {
+                calcData.widthCm = parts[0]
+                calcData.heightCm = parts[1]
+            }
+            1 -> {
+                calcData.diameterCm = parts[0]
+            }
+            else -> {
+                sendMessage(chatId, textProvider.get("calc.error.invalid_dimensions"), null)
+                return
+            }
+        }
+
+        calcData.quantity = 1
 
         finishCalculation(bot, chatId)
     }

@@ -16,7 +16,8 @@ enum class UserMode {
     CALC_AWAITING_PAPER_TYPE,   // Ожидание выбора типа бумаги
     CALC_AWAITING_PRINT_SIDES,  // Ожидание выбора сторон печати (1 или 2)
 
-    CALC_AWAITING_MATERIAL_AND_THICKNESS, // Ожидание выбора материала и толщины
+    CALC_AWAITING_MATERIAL_CATEGORY,      // Ожидание выбора КАТЕГОРИИ материала
+    CALC_AWAITING_MATERIAL_AND_THICKNESS, // Ожидание выбора КОНКРЕТНОГО материала
     CALC_AWAITING_DIMENSIONS,             // Ожидание ввода размеров (ширина/высота или диаметр)
     CALC_AWAITING_PRINT_LAYERS            // Ожидание ввода слоев печати (только для резки+печати)
 }
