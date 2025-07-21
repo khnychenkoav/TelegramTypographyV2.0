@@ -8,6 +8,7 @@ import com.github.kotlintelegrambot.entities.ChatId
 import com.github.kotlintelegrambot.entities.InlineKeyboardMarkup
 import org.example.calculation.CalculatorService
 import org.example.calculation.PriceListProvider
+import org.example.calculation.models.CalculationResult
 import org.example.processing.JobQueue
 import org.example.processing.LlmJob
 import org.example.state.CalculationData
@@ -15,6 +16,7 @@ import org.example.state.SessionManager
 import org.example.state.UserMode
 import org.example.utils.TextProvider
 import org.slf4j.LoggerFactory
+import java.text.DecimalFormat
 
 class ResponseHandler(
     private val sessionManager: SessionManager,
@@ -50,8 +52,14 @@ class ResponseHandler(
             UserMode.LLM_CHAT -> handleLlmChat(env, text)
             UserMode.AWAITING_OPERATOR_QUERY -> handleOperatorQuery(env, text)
 
+            UserMode.CALC_AWAITING_QUANTITY -> handleQuantitySelected(env.bot, chatId, text)
+
             UserMode.CALC_AWAITING_PRODUCT_TYPE -> {
                 sendMessage(chatId, textProvider.get("calc.prompt.choose_product"), keyboardFactory.buildCalcProductTypeMenu())
+            }
+
+            UserMode.CALC_AWAITING_BADGE_TYPE -> {
+                sendMessage(chatId, textProvider.get("calc.prompt.choose_badge_type"), keyboardFactory.buildCalcBadgeTypeMenu())
             }
             else -> {
                 logger.warn("Получено текстовое сообщение в необрабатываемом режиме: {}", session.mode)
@@ -65,8 +73,6 @@ class ResponseHandler(
         val callbackData = env.callbackQuery.data
         env.bot.answerCallbackQuery(env.callbackQuery.id)
 
-        val session = sessionManager.getSession(chatId)
-
         when {
             callbackData == KeyboardFactory.START_CHAT_CALLBACK -> startLlmChat(env.bot, chatId)
             callbackData == KeyboardFactory.CONTACT_OPERATOR_CALLBACK -> startOperatorQuery(env.bot, chatId)
@@ -79,7 +85,7 @@ class ResponseHandler(
 
             callbackData.startsWith(KeyboardFactory.CALC_BADGE_TYPE_PREFIX) -> {
                 val badgeType = callbackData.removePrefix(KeyboardFactory.CALC_BADGE_TYPE_PREFIX)
-                TODO("Обработать выбор типа значка: $badgeType")
+                handleBadgeTypeSelected(env.bot, chatId, badgeType)
             }
         }
     }
@@ -188,5 +194,90 @@ class ResponseHandler(
             }
             else -> TODO("Обработка для продукта $productType еще не реализована")
         }
+    }
+
+    private fun handleBadgeTypeSelected(bot: Bot, chatId: Long, badgeType: String) {
+        val session = sessionManager.getSession(chatId)
+        val calcData = session.currentCalculation ?: return
+
+        val parts = badgeType.split('_')
+        if (parts.size == 2) {
+            calcData.shape = parts[0]
+            calcData.size = parts[1]
+        } else {
+            logger.error("Некорректный формат badgeType: $badgeType")
+            // TODO: Сообщить об ошибке и вернуться в меню
+            return
+        }
+
+        sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_QUANTITY))
+        bot.sendMessage(ChatId.fromId(chatId), textProvider.get("calc.prompt.enter_quantity"))
+    }
+
+    private fun handleQuantitySelected(bot: Bot, chatId: Long, text: String) {
+        val session = sessionManager.getSession(chatId)
+        val calcData = session.currentCalculation ?: return
+
+        val quantity = text.toIntOrNull()
+        if (quantity == null || quantity <= 0) {
+            sendMessage(chatId, textProvider.get("calc.error.invalid_number"), null)
+            return
+        }
+
+        calcData.quantity = quantity
+
+        finishCalculation(bot, chatId)
+    }
+
+
+    private fun finishCalculation(bot: Bot, chatId: Long) {
+        val session = sessionManager.getSession(chatId)
+        val calcData = session.currentCalculation ?: return
+
+        val params = calcData.toOrderParameters()
+        if (params == null) {
+            logger.error("Не удалось создать OrderParameters из CalculationData для чата $chatId")
+            // TODO: Сообщить об ошибке
+            return
+        }
+
+        val result = calculatorService.calculate(params)
+        val resultText = formatCalculationResult(result)
+
+        sendMessage(chatId, textProvider.get("calc.result.success", resultText), null)
+
+        sessionManager.updateSession(chatId, session.copy(
+            mode = UserMode.MAIN_MENU,
+            currentCalculation = null
+        ))
+        showMainMenu(bot, chatId)
+    }
+
+
+    private fun formatCalculationResult(result: CalculationResult): String {
+        val formatter = DecimalFormat("#,##0.00")
+        val builder = StringBuilder()
+
+        if (result.items.isNotEmpty()) {
+            builder.append("Детализация:\n")
+            result.items.forEach { item ->
+                val price = if (item.workPrice > 0) item.workPrice else item.materialPrice
+                builder.append("• ${item.description}: ${formatter.format(price)} ₽\n")
+            }
+            builder.append("\n")
+        }
+
+        if (result.comments.any { it.isNotEmpty() }) {
+            builder.append("Комментарии:\n")
+            result.comments.forEach { comment ->
+                builder.append("- $comment\n")
+            }
+            builder.append("\n")
+        }
+
+        builder.append("------------------------------\n")
+        builder.append("Итоговая стоимость: *${formatter.format(result.finalTotalPrice)} ₽*")
+
+        return builder.toString()
     }
 }
