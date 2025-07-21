@@ -17,7 +17,7 @@ fun main() {
     val textProvider = TextProvider("messages_ru.properties")
     val translationService = TranslationService()
     val priceListProvider = PriceListProvider()
-    val calculatorService = CalculatorService(priceListProvider)
+    val calculatorService = CalculatorService(priceListProvider, textProvider)
     val localLlmService = LlamaCliServiceImpl(llamaBinaryPath, modelPath, translationService)
     val jobQueue = JobQueue(localLlmService)
     val sessionManager = SessionManager()

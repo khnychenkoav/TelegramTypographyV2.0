@@ -122,3 +122,13 @@ data class CalculationItem(
     val workPrice: Double,
     val materialPrice: Double
 )
+
+/**
+ * Запечатанный класс для представления результата вычислений.
+ * Позволяет статически определить, был ли расчет успешным или произошла ошибка.
+ */
+sealed class CalculationOutcome {
+    data class Success(val result: CalculationResult) : CalculationOutcome()
+
+    data class Failure(val errors: List<String>) : CalculationOutcome()
+}
