@@ -1,17 +1,18 @@
 package org.example.bot
 
+import com.github.kotlintelegrambot.Bot
 import com.github.kotlintelegrambot.dispatcher.handlers.CallbackQueryHandlerEnvironment
 import com.github.kotlintelegrambot.dispatcher.handlers.CommandHandlerEnvironment
 import com.github.kotlintelegrambot.dispatcher.handlers.TextHandlerEnvironment
 import com.github.kotlintelegrambot.entities.ChatId
-import org.example.state.SessionManager
-import org.example.state.UserMode
-import org.example.utils.TextProvider
-import com.github.kotlintelegrambot.Bot
 import com.github.kotlintelegrambot.entities.InlineKeyboardMarkup
 import org.example.calculation.CalculatorService
 import org.example.processing.JobQueue
 import org.example.processing.LlmJob
+import org.example.state.CalculationData
+import org.example.state.SessionManager
+import org.example.state.UserMode
+import org.example.utils.TextProvider
 import org.slf4j.LoggerFactory
 
 class ResponseHandler(
@@ -21,7 +22,6 @@ class ResponseHandler(
     private val calculatorService: CalculatorService
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
-
     private val keyboardFactory = KeyboardFactory(textProvider)
 
     lateinit var sendMessage: (chatId: Long, text: String, replyMarkup: InlineKeyboardMarkup?) -> Unit
@@ -29,6 +29,8 @@ class ResponseHandler(
     fun onStartCommand(env: CommandHandlerEnvironment) {
         val chatId = env.message.chat.id
         sessionManager.resetSession(chatId)
+        val session = sessionManager.getSession(chatId)
+        sessionManager.updateSession(chatId, session.copy(mode = UserMode.AWAITING_NAME))
         env.bot.sendMessage(
             chatId = ChatId.fromId(chatId),
             text = textProvider.get("start.welcome")
@@ -42,32 +44,18 @@ class ResponseHandler(
 
         when (session.mode) {
             UserMode.AWAITING_NAME -> handleNameInput(env, text)
-            UserMode.AWAITING_ORDER_DETAILS -> handleOrderDetails(env, text)
-            UserMode.AWAITING_OPERATOR_QUERY -> handleOperatorQuery(env, text)
+            UserMode.MAIN_MENU -> showMainMenu(env.bot, chatId)
             UserMode.LLM_CHAT -> handleLlmChat(env, text)
-            UserMode.MAIN_MENU -> {
-                env.bot.sendMessage(
-                    chatId = ChatId.fromId(chatId),
-                    text = textProvider.get("menu.prompt"),
-                    replyMarkup = keyboardFactory.buildMainMenu()
-                )
+            UserMode.AWAITING_OPERATOR_QUERY -> handleOperatorQuery(env, text)
+
+            UserMode.CALC_AWAITING_PRODUCT_TYPE -> {
+                sendMessage(chatId, textProvider.get("calc.prompt.choose_product"), keyboardFactory.buildCalcProductTypeMenu())
+            }
+            else -> {
+                logger.warn("Получено текстовое сообщение в необрабатываемом режиме: {}", session.mode)
+                sendMessage(chatId, "Пожалуйста, используйте кнопки для выбора.", null)
             }
         }
-    }
-
-    private fun handleNameInput(env: TextHandlerEnvironment, name: String) {
-        val chatId = env.message.chat.id
-        val newSession = sessionManager.getSession(chatId).copy(
-            name = name,
-            mode = UserMode.MAIN_MENU
-        )
-        sessionManager.updateSession(chatId, newSession)
-
-        env.bot.sendMessage(
-            chatId = ChatId.fromId(chatId),
-            text = textProvider.get("greeting.personal", name),
-            replyMarkup = keyboardFactory.buildMainMenu()
-        )
     }
 
     fun onCallbackQuery(env: CallbackQueryHandlerEnvironment) {
@@ -76,19 +64,73 @@ class ResponseHandler(
         env.bot.answerCallbackQuery(env.callbackQuery.id)
 
         when (callbackData) {
-            KeyboardFactory.START_CHAT_CALLBACK -> {
-                sessionManager.updateSession(chatId, sessionManager.getSession(chatId).copy(mode = UserMode.LLM_CHAT))
-                env.bot.sendMessage(ChatId.fromId(chatId), textProvider.get("callback.chat.prompt", "Напишите ваш вопрос."))
-            }
-            KeyboardFactory.CALCULATE_ORDER_CALLBACK -> {
-                sessionManager.updateSession(chatId, sessionManager.getSession(chatId).copy(mode = UserMode.AWAITING_ORDER_DETAILS))
-                env.bot.sendMessage(ChatId.fromId(chatId), textProvider.get("callback.calculate.prompt"))
-            }
-            KeyboardFactory.CONTACT_OPERATOR_CALLBACK -> {
-                sessionManager.updateSession(chatId, sessionManager.getSession(chatId).copy(mode = UserMode.AWAITING_OPERATOR_QUERY))
-                env.bot.sendMessage(ChatId.fromId(chatId), textProvider.get("callback.operator.prompt"))
-            }
+            KeyboardFactory.START_CHAT_CALLBACK -> startLlmChat(env.bot, chatId)
+            KeyboardFactory.CONTACT_OPERATOR_CALLBACK -> startOperatorQuery(env.bot, chatId)
+            KeyboardFactory.CALCULATE_ORDER_CALLBACK -> startCalculation(env.bot, chatId)
+
+            KeyboardFactory.CALC_PT_BADGE_CALLBACK -> TODO("Обработать выбор значков")
+            KeyboardFactory.CALC_PT_DIGITAL_PRINTING_CALLBACK -> TODO("Обработать выбор цифровой печати")
+            KeyboardFactory.CALC_PT_CUTTING_CALLBACK -> TODO("Обработать выбор резки")
+            KeyboardFactory.CALC_PT_CUTTING_AND_PRINTING_CALLBACK -> TODO("Обработать выбор резки с печатью")
         }
+    }
+
+
+    private fun handleNameInput(env: TextHandlerEnvironment, name: String) {
+        val chatId = env.message.chat.id
+        val session = sessionManager.getSession(chatId)
+        sessionManager.updateSession(chatId, session.copy(name = name, mode = UserMode.MAIN_MENU))
+
+        env.bot.sendMessage(
+            chatId = ChatId.fromId(chatId),
+            text = textProvider.get("greeting.personal", name),
+            replyMarkup = keyboardFactory.buildMainMenu()
+        )
+    }
+
+    private fun showMainMenu(bot: Bot, chatId: Long) {
+        bot.sendMessage(
+            chatId = ChatId.fromId(chatId),
+            text = textProvider.get("menu.prompt"),
+            replyMarkup = keyboardFactory.buildMainMenu()
+        )
+    }
+
+    private fun startLlmChat(bot: Bot, chatId: Long) {
+        val session = sessionManager.getSession(chatId)
+        sessionManager.updateSession(chatId, session.copy(mode = UserMode.LLM_CHAT))
+        bot.sendMessage(ChatId.fromId(chatId), textProvider.get("callback.chat.prompt"))
+    }
+
+    private fun startOperatorQuery(bot: Bot, chatId: Long) {
+        val session = sessionManager.getSession(chatId)
+        sessionManager.updateSession(chatId, session.copy(mode = UserMode.AWAITING_OPERATOR_QUERY))
+        bot.sendMessage(ChatId.fromId(chatId), textProvider.get("callback.operator.prompt"))
+    }
+
+    private fun handleOperatorQuery(env: TextHandlerEnvironment, text: String) {
+        val chatId = env.message.chat.id
+        // TODO: Реализовать логику пересылки сообщения оператору
+        sendMessage(chatId, textProvider.get("operator.query.received", text), null)
+
+        val session = sessionManager.getSession(chatId)
+        sessionManager.updateSession(chatId, session.copy(mode = UserMode.MAIN_MENU))
+        showMainMenu(env.bot, chatId)
+    }
+
+    private fun startCalculation(bot: Bot, chatId: Long) {
+        val session = sessionManager.getSession(chatId)
+
+        sessionManager.updateSession(chatId, session.copy(
+            mode = UserMode.CALC_AWAITING_PRODUCT_TYPE,
+            currentCalculation = CalculationData()
+        ))
+
+        bot.sendMessage(
+            chatId = ChatId.fromId(chatId),
+            text = textProvider.get("calc.prompt.choose_product"),
+            replyMarkup = keyboardFactory.buildCalcProductTypeMenu()
+        )
     }
 
     private fun handleLlmChat(env: TextHandlerEnvironment, text: String) {
@@ -102,42 +144,17 @@ class ResponseHandler(
             onResult = { result ->
                 val updatedHistory = session.conversationHistory
                 updatedHistory.add(text to result)
-
                 while (updatedHistory.size > 5) {
                     updatedHistory.removeFirst()
                 }
                 sessionManager.updateSession(chatId, session.copy(conversationHistory = updatedHistory))
-
                 sendMessage(chatId, result, null)
             }
         )
-
         if (jobQueue.submit(job)) {
-            env.bot.sendMessage(ChatId.fromId(chatId), textProvider.get("llm.in_queue"))
+            sendMessage(chatId, textProvider.get("llm.in_queue"), null)
         } else {
-            env.bot.sendMessage(ChatId.fromId(chatId), textProvider.get("llm.error"))
+            sendMessage(chatId, textProvider.get("llm.error"), null)
         }
-    }
-
-    private fun handleOrderDetails(env: TextHandlerEnvironment, text: String) {
-        val chatId = env.message.chat.id
-        env.bot.sendMessage(ChatId.fromId(chatId), textProvider.get("order.received", text))
-        sessionManager.updateSession(chatId, sessionManager.getSession(chatId).copy(mode = UserMode.MAIN_MENU))
-        env.bot.sendMessage(
-            chatId = ChatId.fromId(chatId),
-            text = textProvider.get("general.what_else"),
-            replyMarkup = keyboardFactory.buildMainMenu()
-        )
-    }
-
-    private fun handleOperatorQuery(env: TextHandlerEnvironment, text: String) {
-        val chatId = env.message.chat.id
-        env.bot.sendMessage(ChatId.fromId(chatId), textProvider.get("operator.query.received", text))
-        sessionManager.updateSession(chatId, sessionManager.getSession(chatId).copy(mode = UserMode.MAIN_MENU))
-        env.bot.sendMessage(
-            chatId = ChatId.fromId(chatId),
-            text = textProvider.get("general.what_else"),
-            replyMarkup = keyboardFactory.buildMainMenu()
-        )
     }
 }
