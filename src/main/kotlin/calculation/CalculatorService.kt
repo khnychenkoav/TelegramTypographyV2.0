@@ -293,11 +293,83 @@ class CalculatorService(
         return matchingKey?.let { cuttingPrices[it] }
     }
 
-
     private fun calculateCuttingAndPrinting(params: OrderParameters): CalculationOutcome {
-        logger.warn("Метод calculateCuttingAndPrinting еще не реализован.")
-        return notImplementedResult("Резка с печатью")
+        val validationErrors = validateCuttingAndPrintingParams(params)
+        if (validationErrors.isNotEmpty()) {
+            return CalculationOutcome.Failure(validationErrors)
+        }
+
+        val material = params.material!!
+        val thickness = params.thicknessMm!!
+        val printingLayers = params.printingLayers!!
+
+        val (areaSqm, perimeterM) = calculateDimensions(params)
+
+        val materialKey = "${material}_${thickness}мм".lowercase()
+        val materialPricePerSqm = findMaterialPricePerSqm(materialKey)
+            ?: return CalculationOutcome.Failure(listOf(textProvider.get("calculator.error.unknown_material_key", materialKey)))
+        val totalMaterialPrice = areaSqm * materialPricePerSqm
+        val materialItem = CalculationItem("Материал: $materialKey", 0.0, totalMaterialPrice)
+
+        val cuttingPricePerMeter = findCuttingPricePerMeter(material, thickness)
+            ?: return CalculationOutcome.Failure(listOf(textProvider.get("calculator.error.unknown_operation_key", "$material ${thickness}мм")))
+        val cuttingWorkPrice = perimeterM * cuttingPricePerMeter
+        val cuttingItem = CalculationItem("Работа: Фрезерная резка", cuttingWorkPrice, 0.0)
+
+        var printingWorkPrice = findUvPrintingPricePerSqm(printingLayers)?.let { pricePerSqm ->
+            areaSqm * pricePerSqm
+        } ?: return CalculationOutcome.Failure(listOf(textProvider.get("calculator.error.unknown_print_operation_key", "УФ-печать $printingLayers слоя")))
+
+        if (material.equals("фанера", ignoreCase = true) || material.equals("мдф", ignoreCase = true)) {
+            printingWorkPrice *= prices.operations.printing.uvFlatbed.surcharges.woodSurfaceMultiplier
+        }
+        val printingItem = CalculationItem("Работа: УФ-печать ($printingLayers слоя)", printingWorkPrice, 0.0)
+
+        var totalWorkPrice = cuttingWorkPrice + printingWorkPrice
+        val comments = mutableListOf<String>()
+        val minOrderPrice = prices.operations.generalRules.minOrderMultiMachine
+        if (totalWorkPrice < minOrderPrice) {
+            comments.add(textProvider.get("calculator.comment.min_order_multi_applied", minOrderPrice.toInt()))
+            totalWorkPrice = minOrderPrice
+        }
+
+        val finalPrice = totalMaterialPrice + totalWorkPrice
+        val result = CalculationResult(
+            items = listOf(materialItem, cuttingItem, printingItem),
+            totalWorkPrice = totalWorkPrice,
+            totalMaterialPrice = totalMaterialPrice,
+            finalTotalPrice = finalPrice,
+            comments = comments.ifEmpty { listOf("Расчет выполнен согласно прайс-листу.") }
+        )
+
+        return CalculationOutcome.Success(result)
     }
+
+    private fun validateCuttingAndPrintingParams(params: OrderParameters): List<String> {
+        val errors = validateCuttingParams(params).toMutableList()
+
+        when (params.printingLayers) {
+            null -> errors.add(textProvider.get("calculator.error.no_printing_layers"))
+            !in 1..3 -> errors.add(textProvider.get("calculator.error.invalid_printing_layers"))
+        }
+
+        return errors
+    }
+
+    /**
+     * Ищет цену за квадратный метр УФ-печати по количеству слоев.
+     */
+    private fun findUvPrintingPricePerSqm(layers: Int): Double? {
+        val printingPrices = prices.operations.printing.uvFlatbed.prices
+        val key = when (layers) {
+            1 -> "color_or_white_or_varnish_1_layer"
+            2 -> "color_with_white_2_layers"
+            3 -> "color_with_white_and_varnish_3_layers"
+            else -> null
+        }
+        return key?.let { printingPrices[it] }
+    }
+
 
     private fun notImplementedResult(productName: String): CalculationOutcome.Failure {
         return CalculationOutcome.Failure(listOf(textProvider.get("calculator.error.not_implemented", productName)))
