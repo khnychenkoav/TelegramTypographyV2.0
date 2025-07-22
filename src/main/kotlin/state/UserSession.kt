@@ -28,7 +28,7 @@ data class CalculationData(
     var size: String? = null,
     var quantity: Int? = null,
     var material: String? = null,
-    var thicknessMm: Int? = null,
+    var thicknessMm: Double? = null,
     var widthCm: Double? = null,
     var heightCm: Double? = null,
     var diameterCm: Double? = null,

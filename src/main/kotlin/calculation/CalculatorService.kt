@@ -183,21 +183,32 @@ class CalculatorService(
         }
 
         val material = params.material!!
-        val thickness = params.thicknessMm!!
-
         val (areaSqm, perimeterM) = calculateDimensions(params)
 
-        val materialKey = "${material}_${thickness}мм".lowercase()
-        val materialPricePerSqm = findMaterialPricePerSqm(materialKey)
-            ?: return CalculationOutcome.Failure(listOf(textProvider.get("calculator.error.unknown_material_key", materialKey)))
+        val materialPricePerSqm = findMaterialPricePerSqm(material, params.thicknessMm)
+            ?: return CalculationOutcome.Failure(listOf(textProvider.get("calculator.error.unknown_material_key", params.material.orEmpty())))
 
         val totalMaterialPrice = areaSqm * materialPricePerSqm
-        val materialItem = CalculationItem("Материал: $materialKey", 0.0, totalMaterialPrice)
+        val materialItem = CalculationItem("Материал: ${params.material}", 0.0, totalMaterialPrice)
 
-        val cuttingPricePerMeter = findCuttingPricePerMeter(material, thickness)
-            ?: return CalculationOutcome.Failure(listOf(textProvider.get("calculator.error.unknown_operation_key", "$material ${thickness}мм")))
+        val cuttingWorkPrice: Double
+        val workItem: CalculationItem
 
-        var totalWorkPrice = perimeterM * cuttingPricePerMeter
+        if (params.thicknessMm != null && params.thicknessMm > 0) {
+            val cuttingPricePerMeter = findCuttingPricePerMeter(material, params.thicknessMm)
+                ?: return CalculationOutcome.Failure(listOf(textProvider.get("calculator.error.unknown_operation_key", "$material ${params.thicknessMm}мм")))
+
+            cuttingWorkPrice = perimeterM * cuttingPricePerMeter
+            workItem = CalculationItem("Работа: Фрезерная резка", cuttingWorkPrice, 0.0)
+        } else {
+            val plotterPricePerMeter = prices.operations.cutting.plotternaya?.pricePerMeter
+                ?: return CalculationOutcome.Failure(listOf("Стоимость плоттерной резки не найдена в прайс-листе."))
+
+            cuttingWorkPrice = perimeterM * plotterPricePerMeter
+            workItem = CalculationItem("Работа: Плоттерная резка", cuttingWorkPrice, 0.0)
+        }
+
+        var totalWorkPrice = cuttingWorkPrice
         val comments = mutableListOf<String>()
 
         val minOrderPrice = prices.operations.generalRules.minOrderOneMachine
@@ -205,7 +216,6 @@ class CalculatorService(
             comments.add(textProvider.get("calculator.comment.min_order_applied", minOrderPrice.toInt()))
             totalWorkPrice = minOrderPrice
         }
-        val workItem = CalculationItem("Работа: Фрезерная резка", totalWorkPrice, 0.0)
 
         val finalPrice = totalMaterialPrice + totalWorkPrice
         val result = CalculationResult(
@@ -262,21 +272,31 @@ class CalculatorService(
     /**
      * Ищет цену за квадратный метр материала по его ключу (например, "фанера_3мм").
      */
-    private fun findMaterialPricePerSqm(materialKey: String): Double? {
+    private fun findMaterialPricePerSqm(materialName: String, thickness: Double?): Double? {
+        val key = if (thickness != null && thickness > 0) {
+            "${materialName}_${thickness}мм"
+        } else {
+            materialName
+        }
+
         val allMaterials = prices.materials.wood + prices.materials.plastic + prices.materials.composite +
                 prices.materials.film + prices.materials.magnetic + prices.materials.foam + prices.materials.adhesive
-        return allMaterials[materialKey]
+
+        return allMaterials[key.lowercase()]
     }
 
     /**
      * Ищет цену за погонный метр резки, подбирая подходящий диапазон.
      * Например, для "фанера" и толщины 4мм найдет ключ "фанера_3-6мм".
      */
-    private fun findCuttingPricePerMeter(material: String, thickness: Int): Double? {
+    private fun findCuttingPricePerMeter(material: String, thickness: Double): Double? {
         val cuttingPrices = prices.operations.cutting.frezernaya.prices
 
         val matchingKey = cuttingPrices.keys.find { key ->
-            if (!key.startsWith(material, ignoreCase = true)) return@find false
+            val baseMaterialFromKey = key.substringBeforeLast('_')
+            if (!material.contains(baseMaterialFromKey, ignoreCase = true)) {
+                return@find false
+            }
 
             val thicknessRangeString = key.substringAfterLast('_').removeSuffix("мм")
             val parts = thicknessRangeString.split('-')
@@ -284,7 +304,7 @@ class CalculatorService(
                 val from = parts[0].toIntOrNull()
                 val to = parts[1].toIntOrNull()
                 if (from != null && to != null) {
-                    return@find thickness in from..to
+                    return@find thickness >= from && thickness <= to
                 }
             }
             false
@@ -300,27 +320,37 @@ class CalculatorService(
         }
 
         val material = params.material!!
-        val thickness = params.thicknessMm!!
         val printingLayers = params.printingLayers!!
-
         val (areaSqm, perimeterM) = calculateDimensions(params)
 
-        val materialKey = "${material}_${thickness}мм".lowercase()
-        val materialPricePerSqm = findMaterialPricePerSqm(materialKey)
-            ?: return CalculationOutcome.Failure(listOf(textProvider.get("calculator.error.unknown_material_key", materialKey)))
-        val totalMaterialPrice = areaSqm * materialPricePerSqm
-        val materialItem = CalculationItem("Материал: $materialKey", 0.0, totalMaterialPrice)
+        val materialPricePerSqm = findMaterialPricePerSqm(material, params.thicknessMm)
+            ?: return CalculationOutcome.Failure(listOf(textProvider.get("calculator.error.unknown_material_key", material)))
 
-        val cuttingPricePerMeter = findCuttingPricePerMeter(material, thickness)
-            ?: return CalculationOutcome.Failure(listOf(textProvider.get("calculator.error.unknown_operation_key", "$material ${thickness}мм")))
-        val cuttingWorkPrice = perimeterM * cuttingPricePerMeter
-        val cuttingItem = CalculationItem("Работа: Фрезерная резка", cuttingWorkPrice, 0.0)
+        val totalMaterialPrice = areaSqm * materialPricePerSqm
+        val materialItem = CalculationItem("Материал: $material", 0.0, totalMaterialPrice)
+
+        val cuttingWorkPrice: Double
+        val cuttingItem: CalculationItem
+
+        if (params.thicknessMm != null && params.thicknessMm > 0) {
+            val cuttingPricePerMeter = findCuttingPricePerMeter(material, params.thicknessMm)
+                ?: return CalculationOutcome.Failure(listOf(textProvider.get("calculator.error.unknown_operation_key", "$material ${params.thicknessMm}мм")))
+
+            cuttingWorkPrice = perimeterM * cuttingPricePerMeter
+            cuttingItem = CalculationItem("Работа: Фрезерная резка", cuttingWorkPrice, 0.0)
+        } else {
+            val plotterPricePerMeter = prices.operations.cutting.plotternaya?.pricePerMeter
+                ?: return CalculationOutcome.Failure(listOf("Стоимость плоттерной резки не найдена в прайс-листе."))
+
+            cuttingWorkPrice = perimeterM * plotterPricePerMeter
+            cuttingItem = CalculationItem("Работа: Плоттерная резка", cuttingWorkPrice, 0.0)
+        }
 
         var printingWorkPrice = findUvPrintingPricePerSqm(printingLayers)?.let { pricePerSqm ->
             areaSqm * pricePerSqm
         } ?: return CalculationOutcome.Failure(listOf(textProvider.get("calculator.error.unknown_print_operation_key", "УФ-печать $printingLayers слоя")))
 
-        if (material.equals("фанера", ignoreCase = true) || material.equals("мдф", ignoreCase = true)) {
+        if (material.contains("фанера", ignoreCase = true) || material.contains("мдф", ignoreCase = true)) {
             printingWorkPrice *= prices.operations.printing.uvFlatbed.surcharges.woodSurfaceMultiplier
         }
         val printingItem = CalculationItem("Работа: УФ-печать ($printingLayers слоя)", printingWorkPrice, 0.0)

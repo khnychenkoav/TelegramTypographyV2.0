@@ -61,7 +61,8 @@ data class GeneralRules(
 
 @Serializable
 data class CuttingOperations(
-    val frezernaya: CuttingType
+    val frezernaya: CuttingType,
+    val plotternaya: PlotterCutting? = null
 )
 
 @Serializable
@@ -94,13 +95,19 @@ data class OrderParameters(
     val size: String? = null,
     val quantity: Int? = null,
     val material: String? = null,
-    @SerialName("thickness_mm") val thicknessMm: Int? = null,
+    @SerialName("thickness_mm") val thicknessMm: Double? = null,
     @SerialName("width_cm") val widthCm: Double? = null,
     @SerialName("height_cm") val heightCm: Double? = null,
     @SerialName("diameter_cm") val diameterCm: Double? = null,
     @SerialName("printing_layers") val printingLayers: Int? = null,
     @SerialName("printing_sides") val printingSides: Int? = null
     // ... можно добавлять другие поля по мере необходимости
+)
+
+@Serializable
+data class PlotterCutting(
+    val comment: String,
+    @SerialName("price_per_meter") val pricePerMeter: Double
 )
 
 /**

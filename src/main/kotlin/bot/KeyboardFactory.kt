@@ -5,6 +5,7 @@ import com.github.kotlintelegrambot.entities.keyboard.InlineKeyboardButton
 import org.example.calculation.PriceListProvider
 import org.example.calculation.models.MaterialPriceList
 import org.example.utils.TextProvider
+import kotlin.reflect.KClass
 import kotlin.reflect.full.memberProperties
 
 class KeyboardFactory(
@@ -132,7 +133,9 @@ class KeyboardFactory(
         )
 
         val categories = MaterialPriceList::class.memberProperties
-            .filter { it.returnType.toString().contains("Map<kotlin.String, kotlin.Double>") }
+            .filter {
+                (it.returnType.classifier as? KClass<*>) == Map::class
+            }
             .map { it.name }
 
         val buttons = categories.map { categoryKey ->

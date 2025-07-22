@@ -320,18 +320,28 @@ class ResponseHandler(
         val session = sessionManager.getSession(chatId)
         val calcData = session.currentCalculation ?: return
 
-        val parts = materialKey.split('_')
-        val thicknessString = parts.lastOrNull()?.removeSuffix("мм")
+        val regex = """(\d+(\.\d+)?)мм""".toRegex()
+        val matchResult = regex.find(materialKey)
 
-        if (parts.size < 2 || thicknessString == null) {
-            logger.error("Некорректный формат materialKey: $materialKey")
-            sendMessage(chatId, "Произошла внутренняя ошибка. Попробуйте начать заново.", null)
-            startCalculation(bot, chatId)
-            return
+        if (matchResult != null) {
+            val thicknessString = matchResult.groupValues[1]
+            val thicknessValue = thicknessString.toDoubleOrNull()
+            val materialName = materialKey.replace(regex, "").trim { it == '_' || it.isWhitespace() }
+
+            if (thicknessValue == null || materialName.isBlank()) {
+                logger.error("Некорректный формат materialKey после парсинга: $materialKey")
+                sendMessage(chatId, "Произошла внутренняя ошибка (неверный формат). Попробуйте начать заново.", null)
+                startCalculation(bot, chatId)
+                return
+            }
+
+            calcData.material = materialName
+            calcData.thicknessMm = thicknessValue
+        } else {
+            logger.info("Толщина для материала '$materialKey' не указана. Будет применен расчет для тонких материалов.")
+            calcData.material = materialKey
+            calcData.thicknessMm = null
         }
-
-        calcData.material = parts.dropLast(1).joinToString("_")
-        calcData.thicknessMm = thicknessString.toIntOrNull()
 
         sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_DIMENSIONS))
         bot.sendMessage(
