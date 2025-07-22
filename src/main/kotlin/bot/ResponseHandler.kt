@@ -304,8 +304,16 @@ class ResponseHandler(
 
         val keyboard = keyboardFactory.buildCalcMaterialMenu(category)
         if (keyboard == null) {
-            logger.error("Не удалось создать клавиатуру для категории материалов '$category'")
-            // TODO: Сообщить об ошибке
+            logger.error("Не удалось создать клавиатуру для категории материалов '$category' или в ней нет материалов.")
+            bot.sendMessage(
+                chatId = ChatId.fromId(chatId),
+                text = "В категории '$category' не найдено материалов для расчета. Пожалуйста, выберите другую категорию."
+            )
+            bot.sendMessage(
+                chatId = ChatId.fromId(chatId),
+                text = textProvider.get("calc.prompt.choose_material_category"),
+                replyMarkup = keyboardFactory.buildCalcMaterialCategoryMenu()
+            )
             return
         }
 

@@ -155,6 +155,10 @@ class KeyboardFactory(
             else -> return null
         }
 
+        if (materialsMap.isEmpty()) {
+            return null
+        }
+
         val buttons = materialsMap.keys.map { materialKey ->
             InlineKeyboardButton.CallbackData(
                 text = materialKey,

@@ -211,16 +211,17 @@ class CalculatorService(
         var totalWorkPrice = cuttingWorkPrice
         val comments = mutableListOf<String>()
 
+        var finalPrice = totalMaterialPrice + cuttingWorkPrice
+
         val minOrderPrice = prices.operations.generalRules.minOrderOneMachine
-        if (totalWorkPrice < minOrderPrice) {
+        if (finalPrice < minOrderPrice) {
             comments.add(textProvider.get("calculator.comment.min_order_applied", minOrderPrice.toInt()))
-            totalWorkPrice = minOrderPrice
+            finalPrice = minOrderPrice
         }
 
-        val finalPrice = totalMaterialPrice + totalWorkPrice
         val result = CalculationResult(
             items = listOf(materialItem, workItem),
-            totalWorkPrice = totalWorkPrice,
+            totalWorkPrice = cuttingWorkPrice,
             totalMaterialPrice = totalMaterialPrice,
             finalTotalPrice = finalPrice,
             comments = comments.ifEmpty { listOf("Расчет выполнен согласно прайс-листу.") }
@@ -285,19 +286,35 @@ class CalculatorService(
     private fun findCuttingPricePerMeter(material: String, thickness: Double): Double? {
         val cuttingPrices = prices.operations.cutting.frezernaya.prices
 
+        val materialAliases = mapOf(
+            "композитные_панели" to "композит",
+            "фанера" to "фанера",
+            "мдф" to "мдф",
+            "акрил" to "акрил",
+            "пвх" to "пвх"
+        )
+
         val matchingKey = cuttingPrices.keys.find { key ->
             val baseMaterialFromKey = key.substringBeforeLast('_')
-            if (!material.contains(baseMaterialFromKey, ignoreCase = true)) {
+
+            val alias = materialAliases[baseMaterialFromKey]
+
+            if (alias == null || !material.contains(alias, ignoreCase = true)) {
                 return@find false
             }
 
             val thicknessRangeString = key.substringAfterLast('_').removeSuffix("мм")
             val parts = thicknessRangeString.split('-')
             if (parts.size == 2) {
-                val from = parts[0].toIntOrNull()
-                val to = parts[1].toIntOrNull()
+                val from = parts[0].toDoubleOrNull()
+                val to = parts[1].toDoubleOrNull()
                 if (from != null && to != null) {
                     return@find thickness >= from && thickness <= to
+                }
+            } else {
+                val singleThickness = thicknessRangeString.toDoubleOrNull()
+                if (singleThickness != null) {
+                    return@find thickness == singleThickness
                 }
             }
             false
@@ -350,16 +367,17 @@ class CalculatorService(
 
         var totalWorkPrice = cuttingWorkPrice + printingWorkPrice
         val comments = mutableListOf<String>()
+        var finalPrice = totalMaterialPrice + cuttingWorkPrice + printingWorkPrice
+
         val minOrderPrice = prices.operations.generalRules.minOrderMultiMachine
-        if (totalWorkPrice < minOrderPrice) {
+        if (finalPrice < minOrderPrice) {
             comments.add(textProvider.get("calculator.comment.min_order_multi_applied", minOrderPrice.toInt()))
-            totalWorkPrice = minOrderPrice
+            finalPrice = minOrderPrice
         }
 
-        val finalPrice = totalMaterialPrice + totalWorkPrice
         val result = CalculationResult(
             items = listOf(materialItem, cuttingItem, printingItem),
-            totalWorkPrice = totalWorkPrice,
+            totalWorkPrice = cuttingWorkPrice + printingWorkPrice,
             totalMaterialPrice = totalMaterialPrice,
             finalTotalPrice = finalPrice,
             comments = comments.ifEmpty { listOf("Расчет выполнен согласно прайс-листу.") }
