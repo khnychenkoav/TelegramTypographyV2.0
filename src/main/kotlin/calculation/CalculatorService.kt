@@ -211,10 +211,27 @@ class CalculatorService(
         return allMaterials[originalKey]
     }
 
-    private fun findCuttingPricePerMeter(baseMaterial: String, thickness: Double): Double? {
-        val cuttingPricesByMaterial = prices.operations.cutting.frezernaya.pricesByMaterial ?: return null
-        val priceTiers = cuttingPricesByMaterial[baseMaterial] ?: return null
-        return priceTiers.find { tier -> thickness >= tier.from && thickness <= tier.to }?.price
+    private fun findCuttingPricePerMeter(material: String, thickness: Double): Double? {
+        val cuttingPricesByMaterial = prices.operations.cutting.frezernaya.pricesByMaterial
+            ?: run {
+                logger.error("Структура 'prices_by_material' не найдена в operations.json")
+                return null
+            }
+
+        val baseMaterialKey = cuttingPricesByMaterial.keys.find { key ->
+            material.startsWith(key, ignoreCase = true)
+        } ?: run {
+            logger.warn("Для материала '$material' не найдено базового ключа в operations.json. Доступные ключи: ${cuttingPricesByMaterial.keys}")
+            return null
+        }
+
+        val priceTiers = cuttingPricesByMaterial[baseMaterialKey] ?: return null
+
+        val matchingTier = priceTiers.find { tier ->
+            thickness >= tier.from && thickness <= tier.to
+        }
+
+        return matchingTier?.price
     }
 
     private fun calculateCuttingAndPrinting(params: OrderParameters): CalculationOutcome {
