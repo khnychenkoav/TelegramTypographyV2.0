@@ -52,26 +52,7 @@ class ResponseHandler(
             UserMode.LLM_CHAT -> handleLlmChat(env, text)
             UserMode.AWAITING_OPERATOR_QUERY -> handleOperatorQuery(env, text)
             UserMode.CALC_AWAITING_QUANTITY -> handleQuantitySelected(env.bot, chatId, text)
-            UserMode.CALC_AWAITING_PRODUCT_TYPE -> {
-                sendMessage(chatId, textProvider.get("calc.prompt.choose_product"), keyboardFactory.buildCalcProductTypeMenu())
-            }
-            UserMode.CALC_AWAITING_BADGE_TYPE -> {
-                sendMessage(chatId, textProvider.get("calc.prompt.choose_badge_type"), keyboardFactory.buildCalcBadgeTypeMenu())
-            }
-            UserMode.CALC_AWAITING_PAPER_TYPE -> {
-                sendMessage(chatId, textProvider.get("calc.prompt.choose_paper_type"), keyboardFactory.buildCalcPaperTypeMenu())
-            }
-            UserMode.CALC_AWAITING_PRINT_SIDES -> {
-                sendMessage(chatId, textProvider.get("calc.prompt.choose_print_sides"), keyboardFactory.buildCalcPrintSidesMenu())
-            }
             UserMode.CALC_AWAITING_DIMENSIONS -> handleDimensionsSelected(env.bot, chatId, text)
-            UserMode.CALC_AWAITING_MATERIAL_CATEGORY -> {
-                sendMessage(chatId, textProvider.get("calc.prompt.choose_material_category"), keyboardFactory.buildCalcMaterialCategoryMenu())
-            }
-            UserMode.CALC_AWAITING_MATERIAL_AND_THICKNESS -> {
-                sendMessage(chatId, "Пожалуйста, выберите материал из списка.", null)
-            }
-
             else -> {
                 logger.warn("Получено текстовое сообщение в необрабатываемом режиме: {}", session.mode)
                 sendMessage(chatId, "Пожалуйста, используйте кнопки для выбора.", null)
@@ -91,7 +72,7 @@ class ResponseHandler(
             callbackData == KeyboardFactory.CALC_PT_BADGE_CALLBACK -> handleProductTypeSelected(env.bot, chatId, "badge")
             callbackData == KeyboardFactory.CALC_PT_DIGITAL_PRINTING_CALLBACK -> handleProductTypeSelected(env.bot, chatId, "digital_printing")
             callbackData == KeyboardFactory.CALC_PT_CUTTING_CALLBACK -> handleProductTypeSelected(env.bot, chatId, "cutting")
-            callbackData == KeyboardFactory.CALC_PT_CUTTING_AND_PRINTING_CALLBACK -> TODO("Будет реализовано позже")
+            callbackData == KeyboardFactory.CALC_PT_CUTTING_AND_PRINTING_CALLBACK -> handleProductTypeSelected(env.bot, chatId, "cutting_and_printing")
 
             callbackData.startsWith(KeyboardFactory.CALC_BADGE_TYPE_PREFIX) -> {
                 val badgeType = callbackData.removePrefix(KeyboardFactory.CALC_BADGE_TYPE_PREFIX)
@@ -114,6 +95,12 @@ class ResponseHandler(
             callbackData.startsWith(KeyboardFactory.CALC_MATERIAL_PREFIX) -> {
                 val materialKey = callbackData.removePrefix(KeyboardFactory.CALC_MATERIAL_PREFIX)
                 handleMaterialSelected(env.bot, chatId, materialKey)
+            }
+            callbackData.startsWith(KeyboardFactory.CALC_PRINT_LAYERS_PREFIX) -> {
+                val layers = callbackData.removePrefix(KeyboardFactory.CALC_PRINT_LAYERS_PREFIX).toIntOrNull()
+                if (layers != null) {
+                    handlePrintLayersSelected(env.bot, chatId, layers)
+                }
             }
         }
     }
@@ -229,7 +216,7 @@ class ResponseHandler(
                     replyMarkup = keyboard
                 )
             }
-            "cutting" -> {
+            "cutting", "cutting_and_printing" -> {
                 sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_MATERIAL_CATEGORY))
                 bot.sendMessage(
                     chatId = ChatId.fromId(chatId),
@@ -237,7 +224,10 @@ class ResponseHandler(
                     replyMarkup = keyboardFactory.buildCalcMaterialCategoryMenu()
                 )
             }
-            else -> TODO("Обработка для продукта $productType еще не реализована")
+            else -> {
+                logger.error("Неизвестный тип продукта: $productType")
+                sendMessage(chatId, "Произошла ошибка, неизвестный тип продукта.", null)
+            }
         }
     }
 
@@ -251,7 +241,8 @@ class ResponseHandler(
             calcData.size = parts[1]
         } else {
             logger.error("Некорректный формат badgeType: $badgeType")
-            // TODO: Сообщить об ошибке и вернуться в меню
+            sendMessage(chatId, "Ошибка: неверный формат типа значка. Начните заново.", null)
+            startCalculation(bot, chatId)
             return
         }
 
@@ -329,33 +320,23 @@ class ResponseHandler(
         val calcData = session.currentCalculation ?: return
         calcData.originalMaterialKey = materialKey
 
-        val regex = """(\d+(\.\d+)?)мм""".toRegex()
+        val regex = """^([a-z_]+)_(\d+(\.\d+)?)mm$""".toRegex()
         val matchResult = regex.find(materialKey)
 
         if (matchResult != null) {
-            val thicknessString = matchResult.groupValues[1]
-            val thicknessValue = thicknessString.toDoubleOrNull()
-            val materialName = materialKey.replace(regex, "").trim { it == '_' || it.isWhitespace() }
-
-            if (thicknessValue == null || materialName.isBlank()) {
-                logger.error("Некорректный формат materialKey после парсинга: $materialKey")
-                sendMessage(chatId, "Произошла внутренняя ошибка (неверный формат). Попробуйте начать заново.", null)
-                startCalculation(bot, chatId)
-                return
-            }
-
+            val (materialName, thicknessString) = matchResult.destructured
             calcData.material = materialName
-            calcData.thicknessMm = thicknessValue
+            calcData.thicknessMm = thicknessString.toDoubleOrNull()
         } else {
-            logger.info("Толщина для материала '$materialKey' не указана. Будет применен расчет для тонких материалов.")
             calcData.material = materialKey
             calcData.thicknessMm = null
         }
 
         sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_DIMENSIONS))
+        val materialDisplayName = textProvider.get("material.$materialKey")
         bot.sendMessage(
             chatId = ChatId.fromId(chatId),
-            text = textProvider.get("calc.prompt.enter_dimensions", materialKey)
+            text = textProvider.get("calc.prompt.enter_dimensions", materialDisplayName)
         )
     }
 
@@ -379,9 +360,26 @@ class ResponseHandler(
             }
         }
 
-        calcData.quantity = 1
+        if (calcData.productType == "cutting_and_printing") {
+            sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_PRINT_LAYERS))
+            bot.sendMessage(
+                chatId = ChatId.fromId(chatId),
+                text = textProvider.get("calc.prompt.choose_print_layers"),
+                replyMarkup = keyboardFactory.buildCalcPrintLayersMenu()
+            )
+        } else {
+            sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_QUANTITY))
+            bot.sendMessage(ChatId.fromId(chatId), textProvider.get("calc.prompt.enter_quantity"))
+        }
+    }
 
-        finishCalculation(bot, chatId)
+    private fun handlePrintLayersSelected(bot: Bot, chatId: Long, layers: Int) {
+        val session = sessionManager.getSession(chatId)
+        val calcData = session.currentCalculation ?: return
+        calcData.printingLayers = layers
+
+        sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_QUANTITY))
+        bot.sendMessage(ChatId.fromId(chatId), textProvider.get("calc.prompt.enter_quantity"))
     }
 
 
@@ -392,7 +390,7 @@ class ResponseHandler(
         val params = calcData.toOrderParameters()
         if (params == null) {
             logger.error("Не удалось создать OrderParameters из CalculationData для чата $chatId")
-            // TODO: Сообщить об ошибке
+            sendMessage(chatId, "Произошла внутренняя ошибка при подготовке данных для расчета.", null)
             return
         }
 
@@ -431,7 +429,7 @@ class ResponseHandler(
         }
 
         builder.append("------------------------------\n")
-        builder.append("Итоговая стоимость: *${formatter.format(result.finalTotalPrice)} ₽*")
+        builder.append("Итоговая стоимость: ${formatter.format(result.finalTotalPrice)} ₽")
 
         return builder.toString()
     }

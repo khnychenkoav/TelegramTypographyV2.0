@@ -3,10 +3,7 @@ package org.example.bot
 import com.github.kotlintelegrambot.entities.InlineKeyboardMarkup
 import com.github.kotlintelegrambot.entities.keyboard.InlineKeyboardButton
 import org.example.calculation.PriceListProvider
-import org.example.calculation.models.MaterialPriceList
 import org.example.utils.TextProvider
-import kotlin.reflect.KClass
-import kotlin.reflect.full.memberProperties
 
 class KeyboardFactory(
     private val textProvider: TextProvider,
@@ -28,7 +25,9 @@ class KeyboardFactory(
         const val CALC_PRINT_SIDES_PREFIX = "calc_print_sides_"
         const val CALC_MATERIAL_CATEGORY_PREFIX = "calc_mat_cat_"
         const val CALC_MATERIAL_PREFIX = "calc_material_"
+        const val CALC_PRINT_LAYERS_PREFIX = "calc_print_layers_"
     }
+
 
     fun buildMainMenu(): InlineKeyboardMarkup {
         return InlineKeyboardMarkup.create(
@@ -161,10 +160,33 @@ class KeyboardFactory(
 
         val buttons = materialsMap.keys.map { materialKey ->
             InlineKeyboardButton.CallbackData(
-                text = materialKey,
+                text = textProvider.get("material.$materialKey"),
                 callbackData = "$CALC_MATERIAL_PREFIX$materialKey"
             )
         }
         return InlineKeyboardMarkup.create(buttons.chunked(2))
+    }
+
+    fun buildCalcPrintLayersMenu(): InlineKeyboardMarkup {
+        return InlineKeyboardMarkup.create(
+            listOf(
+                InlineKeyboardButton.CallbackData(
+                    text = textProvider.get("button.calc.layers_1"),
+                    callbackData = "${CALC_PRINT_LAYERS_PREFIX}1"
+                )
+            ),
+            listOf(
+                InlineKeyboardButton.CallbackData(
+                    text = textProvider.get("button.calc.layers_2"),
+                    callbackData = "${CALC_PRINT_LAYERS_PREFIX}2"
+                )
+            ),
+            listOf(
+                InlineKeyboardButton.CallbackData(
+                    text = textProvider.get("button.calc.layers_3"),
+                    callbackData = "${CALC_PRINT_LAYERS_PREFIX}3"
+                )
+            )
+        )
     }
 }

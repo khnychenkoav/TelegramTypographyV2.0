@@ -21,8 +21,8 @@ data class ProductPriceList(
 @Serializable
 data class ProductGroup(
     val comment: String,
-    val types: Map<String, List<TierPrice>>? = null, // Для значков
-    @SerialName("paper_type") val paperType: Map<String, PaperPrices>? = null // Для цифровой печати
+    val types: Map<String, List<TierPrice>>? = null,
+    @SerialName("paper_type") val paperType: Map<String, PaperPrices>? = null
 )
 
 @Serializable
@@ -66,9 +66,16 @@ data class CuttingOperations(
 )
 
 @Serializable
+data class CuttingPriceTier(
+    val from: Double,
+    val to: Double,
+    val price: Double
+)
+
+@Serializable
 data class CuttingType(
     val comment: String,
-    val prices: Map<String, Double>
+    @SerialName("prices_by_material") val pricesByMaterial: Map<String, List<CuttingPriceTier>>? = null
 )
 
 @Serializable
@@ -102,7 +109,6 @@ data class OrderParameters(
     @SerialName("diameter_cm") val diameterCm: Double? = null,
     @SerialName("printing_layers") val printingLayers: Int? = null,
     @SerialName("printing_sides") val printingSides: Int? = null
-    // ... можно добавлять другие поля по мере необходимости
 )
 
 @Serializable
