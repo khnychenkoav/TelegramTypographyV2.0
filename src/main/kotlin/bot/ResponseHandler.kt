@@ -30,6 +30,14 @@ class ResponseHandler(
 
     lateinit var sendMessage: (chatId: Long, text: String, replyMarkup: InlineKeyboardMarkup?) -> Unit
 
+    private fun escapeMarkdownV1(text: String): String {
+        return text
+            .replace("_", "\\_")
+            .replace("*", "\\*")
+            .replace("`", "\\`")
+            .replace("[", "\\[")
+    }
+
     fun onStartCommand(env: CommandHandlerEnvironment) {
         val chatId = env.message.chat.id
         sessionManager.resetSession(chatId)
@@ -414,8 +422,11 @@ class ResponseHandler(
         if (result.items.isNotEmpty()) {
             builder.append("Детализация:\n")
             result.items.forEach { item ->
-                val price = if (item.workPrice > 0) item.workPrice else item.materialPrice
-                builder.append("• ${item.description}: ${formatter.format(price)} ₽\n")
+                val price = item.workPrice + item.materialPrice
+                if (price > 0) {
+                    val escapedDescription = escapeMarkdownV1(item.description)
+                    builder.append("• ${escapedDescription}: ${formatter.format(price)} ₽\n")
+                }
             }
             builder.append("\n")
         }
@@ -423,13 +434,14 @@ class ResponseHandler(
         if (result.comments.any { it.isNotEmpty() }) {
             builder.append("Комментарии:\n")
             result.comments.forEach { comment ->
-                builder.append("- $comment\n")
+                val escapedComment = escapeMarkdownV1(comment)
+                builder.append("- $escapedComment\n")
             }
             builder.append("\n")
         }
 
         builder.append("------------------------------\n")
-        builder.append("Итоговая стоимость: ${formatter.format(result.finalTotalPrice)} ₽")
+        builder.append("Итоговая стоимость: *${formatter.format(result.finalTotalPrice)} ₽*")
 
         return builder.toString()
     }
