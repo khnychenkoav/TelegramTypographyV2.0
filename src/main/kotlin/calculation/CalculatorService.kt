@@ -185,8 +185,8 @@ class CalculatorService(
         val material = params.material!!
         val (areaSqm, perimeterM) = calculateDimensions(params)
 
-        val materialPricePerSqm = findMaterialPricePerSqm(material, params.thicknessMm)
-            ?: return CalculationOutcome.Failure(listOf(textProvider.get("calculator.error.unknown_material_key", params.material.orEmpty())))
+        val materialPricePerSqm = findMaterialPricePerSqm(params.originalMaterialKey)
+            ?: return CalculationOutcome.Failure(listOf(textProvider.get("calculator.error.unknown_material_key", params.originalMaterialKey.orEmpty())))
 
         val totalMaterialPrice = areaSqm * materialPricePerSqm
         val materialItem = CalculationItem("Материал: ${params.material}", 0.0, totalMaterialPrice)
@@ -235,9 +235,6 @@ class CalculatorService(
         if (params.material.isNullOrBlank()) {
             errors.add(textProvider.get("calculator.error.no_paper_type"))
         }
-        if (params.thicknessMm == null || params.thicknessMm <= 0) {
-            errors.add(textProvider.get("calculator.error.no_thickness"))
-        }
 
         val hasRectDimensions = params.widthCm != null && params.heightCm != null && params.widthCm > 0 && params.heightCm > 0
         val hasCircleDimensions = params.diameterCm != null && params.diameterCm > 0
@@ -272,17 +269,13 @@ class CalculatorService(
     /**
      * Ищет цену за квадратный метр материала по его ключу (например, "фанера_3мм").
      */
-    private fun findMaterialPricePerSqm(materialName: String, thickness: Double?): Double? {
-        val key = if (thickness != null && thickness > 0) {
-            "${materialName}_${thickness}мм"
-        } else {
-            materialName
-        }
+    private fun findMaterialPricePerSqm(originalKey: String?): Double? {
+        if (originalKey.isNullOrBlank()) return null
 
         val allMaterials = prices.materials.wood + prices.materials.plastic + prices.materials.composite +
                 prices.materials.film + prices.materials.magnetic + prices.materials.foam + prices.materials.adhesive
 
-        return allMaterials[key.lowercase()]
+        return allMaterials[originalKey.lowercase()]
     }
 
     /**
@@ -323,8 +316,8 @@ class CalculatorService(
         val printingLayers = params.printingLayers!!
         val (areaSqm, perimeterM) = calculateDimensions(params)
 
-        val materialPricePerSqm = findMaterialPricePerSqm(material, params.thicknessMm)
-            ?: return CalculationOutcome.Failure(listOf(textProvider.get("calculator.error.unknown_material_key", material)))
+        val materialPricePerSqm = findMaterialPricePerSqm(params.originalMaterialKey)
+            ?: return CalculationOutcome.Failure(listOf(textProvider.get("calculator.error.unknown_material_key", params.originalMaterialKey.orEmpty())))
 
         val totalMaterialPrice = areaSqm * materialPricePerSqm
         val materialItem = CalculationItem("Материал: $material", 0.0, totalMaterialPrice)

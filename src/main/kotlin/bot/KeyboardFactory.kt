@@ -132,11 +132,7 @@ class KeyboardFactory(
             "adhesive" to "Клеевые материалы"
         )
 
-        val categories = MaterialPriceList::class.memberProperties
-            .filter {
-                (it.returnType.classifier as? KClass<*>) == Map::class
-            }
-            .map { it.name }
+        val categories = listOf("wood", "plastic", "composite", "film", "magnetic", "foam", "adhesive")
 
         val buttons = categories.map { categoryKey ->
             InlineKeyboardButton.CallbackData(

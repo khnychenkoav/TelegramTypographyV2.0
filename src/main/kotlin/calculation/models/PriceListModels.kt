@@ -90,6 +90,7 @@ data class Surcharges(
 
 @Serializable
 data class OrderParameters(
+    @SerialName("original_material_key") val originalMaterialKey: String? = null,
     @SerialName("product_type") val productType: String,
     val shape: String? = null,
     val size: String? = null,

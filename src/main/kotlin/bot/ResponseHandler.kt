@@ -319,6 +319,7 @@ class ResponseHandler(
     private fun handleMaterialSelected(bot: Bot, chatId: Long, materialKey: String) {
         val session = sessionManager.getSession(chatId)
         val calcData = session.currentCalculation ?: return
+        calcData.originalMaterialKey = materialKey
 
         val regex = """(\d+(\.\d+)?)мм""".toRegex()
         val matchResult = regex.find(materialKey)

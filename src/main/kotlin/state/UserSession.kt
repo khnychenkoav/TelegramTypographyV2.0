@@ -23,6 +23,7 @@ enum class UserMode {
 }
 
 data class CalculationData(
+    var originalMaterialKey: String? = null,
     var productType: String? = null,
     var shape: String? = null,
     var size: String? = null,
@@ -42,6 +43,7 @@ data class CalculationData(
     fun toOrderParameters(): OrderParameters? {
         val finalProductType = productType ?: return null
         return OrderParameters(
+            originalMaterialKey = originalMaterialKey,
             productType = finalProductType,
             shape = shape,
             size = size,
