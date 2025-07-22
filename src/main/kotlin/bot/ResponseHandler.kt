@@ -325,7 +325,8 @@ class ResponseHandler(
 
         if (parts.size < 2 || thicknessString == null) {
             logger.error("Некорректный формат materialKey: $materialKey")
-            // TODO: обработать ошибку
+            sendMessage(chatId, "Произошла внутренняя ошибка. Попробуйте начать заново.", null)
+            startCalculation(bot, chatId)
             return
         }
 
@@ -334,8 +335,8 @@ class ResponseHandler(
 
         sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_DIMENSIONS))
         bot.sendMessage(
-            ChatId.fromId(chatId),
-            textProvider.get("calc.prompt.enter_dimensions_rect", materialKey) + "\nИли введите диаметр для круга."
+            chatId = ChatId.fromId(chatId),
+            text = textProvider.get("calc.prompt.enter_dimensions", materialKey)
         )
     }
 

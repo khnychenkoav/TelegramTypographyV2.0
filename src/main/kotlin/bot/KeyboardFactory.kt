@@ -3,7 +3,9 @@ package org.example.bot
 import com.github.kotlintelegrambot.entities.InlineKeyboardMarkup
 import com.github.kotlintelegrambot.entities.keyboard.InlineKeyboardButton
 import org.example.calculation.PriceListProvider
+import org.example.calculation.models.MaterialPriceList
 import org.example.utils.TextProvider
+import kotlin.reflect.full.memberProperties
 
 class KeyboardFactory(
     private val textProvider: TextProvider,
@@ -119,7 +121,7 @@ class KeyboardFactory(
     }
 
     fun buildCalcMaterialCategoryMenu(): InlineKeyboardMarkup {
-        val categories = mapOf(
+        val categoryNames = mapOf(
             "wood" to "Дерево, МДФ",
             "plastic" to "Пластик, Акрил",
             "composite" to "Композит",
@@ -129,10 +131,14 @@ class KeyboardFactory(
             "adhesive" to "Клеевые материалы"
         )
 
-        val buttons = categories.map { (key, name) ->
+        val categories = MaterialPriceList::class.memberProperties
+            .filter { it.returnType.toString().contains("Map<kotlin.String, kotlin.Double>") }
+            .map { it.name }
+
+        val buttons = categories.map { categoryKey ->
             InlineKeyboardButton.CallbackData(
-                text = name,
-                callbackData = "$CALC_MATERIAL_CATEGORY_PREFIX$key"
+                text = categoryNames[categoryKey] ?: categoryKey,
+                callbackData = "$CALC_MATERIAL_CATEGORY_PREFIX$categoryKey"
             )
         }
         return InlineKeyboardMarkup.create(buttons.chunked(2))

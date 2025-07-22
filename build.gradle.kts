@@ -9,6 +9,7 @@ version = "1.0-SNAPSHOT"
 
 
 dependencies {
+    implementation(kotlin("reflect"))
     implementation("io.github.kotlin-telegram-bot.kotlin-telegram-bot:telegram:6.3.0")
     implementation("org.slf4j:slf4j-simple:2.0.13")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
