@@ -16,15 +16,6 @@ class TypographyBot(private val responseHandler: ResponseHandler) {
     private val bot: Bot
 
     init {
-        responseHandler.sendMessage = { chatId, text, replyMarkup ->
-            bot.sendMessage(
-                chatId = ChatId.fromId(chatId),
-                text = text,
-                replyMarkup = replyMarkup,
-                parseMode = ParseMode.MARKDOWN
-            )
-        }
-
         bot = bot {
             token = BOT_TOKEN
             logLevel = LogLevel.Network.Body

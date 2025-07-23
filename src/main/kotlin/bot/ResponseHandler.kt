@@ -6,6 +6,7 @@ import com.github.kotlintelegrambot.dispatcher.handlers.CommandHandlerEnvironmen
 import com.github.kotlintelegrambot.dispatcher.handlers.TextHandlerEnvironment
 import com.github.kotlintelegrambot.entities.ChatId
 import com.github.kotlintelegrambot.entities.InlineKeyboardMarkup
+import com.github.kotlintelegrambot.network.fold
 import org.example.calculation.CalculatorService
 import org.example.calculation.PriceListProvider
 import org.example.calculation.models.CalculationResult
@@ -28,7 +29,59 @@ class ResponseHandler(
     private val logger = LoggerFactory.getLogger(javaClass)
     private val keyboardFactory = KeyboardFactory(textProvider, priceListProvider)
 
-    lateinit var sendMessage: (chatId: Long, text: String, replyMarkup: InlineKeyboardMarkup?) -> Unit
+    private fun sendOrEditMessage(
+        bot: Bot,
+        chatId: Long,
+        text: String,
+        replyMarkup: InlineKeyboardMarkup?,
+        editPrevious: Boolean = true
+    ) {
+        val session = sessionManager.getSession(chatId)
+        val messageIdToEdit = if (editPrevious) session.lastBotMessageId else null
+
+        var finalMessageId: Long? = null
+
+        if (messageIdToEdit != null) {
+            bot.editMessageText(
+                chatId = ChatId.fromId(chatId),
+                messageId = messageIdToEdit,
+                text = text,
+                replyMarkup = replyMarkup,
+                parseMode = com.github.kotlintelegrambot.entities.ParseMode.MARKDOWN
+            ).fold(
+                {
+                    finalMessageId = messageIdToEdit
+                },
+                { error ->
+                    logger.warn("Не удалось отредактировать сообщение $messageIdToEdit: $error. Отправляю новое.")
+                    bot.sendMessage(
+                        chatId = ChatId.fromId(chatId),
+                        text = text,
+                        replyMarkup = replyMarkup,
+                        parseMode = com.github.kotlintelegrambot.entities.ParseMode.MARKDOWN
+                    ).fold(
+                        { newMessage -> finalMessageId = newMessage.messageId },
+                        { sendError -> logger.error("Не удалось отправить запасное сообщение: $sendError") }
+                    )
+                }
+            )
+        } else {
+            bot.sendMessage(
+                chatId = ChatId.fromId(chatId),
+                text = text,
+                replyMarkup = replyMarkup,
+                parseMode = com.github.kotlintelegrambot.entities.ParseMode.MARKDOWN
+            ).fold(
+                { newMessage -> finalMessageId = newMessage.messageId },
+                { error -> logger.error("Не удалось отправить сообщение: $error") }
+            )
+        }
+
+        finalMessageId?.let {
+            session.lastBotMessageId = it
+            sessionManager.updateSession(chatId, session)
+        }
+    }
 
     private fun escapeMarkdownV1(text: String): String {
         return text
@@ -63,7 +116,7 @@ class ResponseHandler(
             UserMode.CALC_AWAITING_DIMENSIONS -> handleDimensionsSelected(env.bot, chatId, text)
             else -> {
                 logger.warn("Получено текстовое сообщение в необрабатываемом режиме: {}", session.mode)
-                sendMessage(chatId, "Пожалуйста, используйте кнопки для выбора.", null)
+                sendOrEditMessage(env.bot, chatId, "Пожалуйста, используйте кнопки для выбора.", null, editPrevious = false)
             }
         }
     }
@@ -119,31 +172,23 @@ class ResponseHandler(
         val session = sessionManager.getSession(chatId)
         sessionManager.updateSession(chatId, session.copy(name = name, mode = UserMode.MAIN_MENU))
 
-        env.bot.sendMessage(
-            chatId = ChatId.fromId(chatId),
-            text = textProvider.get("greeting.personal", name),
-            replyMarkup = keyboardFactory.buildMainMenu()
-        )
+        sendOrEditMessage(env.bot, chatId, textProvider.get("greeting.personal", name), keyboardFactory.buildMainMenu(), editPrevious = false)
     }
 
-    private fun showMainMenu(bot: Bot, chatId: Long) {
-        bot.sendMessage(
-            chatId = ChatId.fromId(chatId),
-            text = textProvider.get("menu.prompt"),
-            replyMarkup = keyboardFactory.buildMainMenu()
-        )
+    private fun showMainMenu(bot: Bot, chatId: Long, editPrevious: Boolean = true) {
+        sendOrEditMessage(bot, chatId, textProvider.get("menu.prompt"), keyboardFactory.buildMainMenu(), editPrevious)
     }
 
     private fun startLlmChat(bot: Bot, chatId: Long) {
         val session = sessionManager.getSession(chatId)
         sessionManager.updateSession(chatId, session.copy(mode = UserMode.LLM_CHAT))
-        bot.sendMessage(ChatId.fromId(chatId), textProvider.get("callback.chat.prompt"))
+        sendOrEditMessage(bot, chatId, textProvider.get("callback.chat.prompt"), null)
     }
 
     private fun startOperatorQuery(bot: Bot, chatId: Long) {
         val session = sessionManager.getSession(chatId)
         sessionManager.updateSession(chatId, session.copy(mode = UserMode.AWAITING_OPERATOR_QUERY))
-        bot.sendMessage(ChatId.fromId(chatId), textProvider.get("callback.operator.prompt"))
+        sendOrEditMessage(bot, chatId, textProvider.get("callback.operator.prompt"), null)
     }
 
     private fun handleOperatorQuery(env: TextHandlerEnvironment, text: String) {
@@ -168,10 +213,10 @@ class ResponseHandler(
                 text = messageForOperator,
                 parseMode = com.github.kotlintelegrambot.entities.ParseMode.MARKDOWN
             )
-            sendMessage(chatId, textProvider.get("operator.query.received"), null)
+            sendOrEditMessage(env.bot, chatId, textProvider.get("operator.query.received"), null, editPrevious = false)
         } else {
             logger.warn("OPERATOR_CHAT_ID не настроен. Сообщение не отправлено.")
-            sendMessage(chatId, "К сожалению, связь с оператором временно недоступна. Пожалуйста, попробуйте позже.", null)
+            sendOrEditMessage(env.bot, chatId, "К сожалению, связь с оператором временно недоступна. Пожалуйста, попробуйте позже.", null, editPrevious = false)
         }
 
         val session = sessionManager.getSession(chatId)
@@ -187,11 +232,7 @@ class ResponseHandler(
             currentCalculation = CalculationData()
         ))
 
-        bot.sendMessage(
-            chatId = ChatId.fromId(chatId),
-            text = textProvider.get("calc.prompt.choose_product"),
-            replyMarkup = keyboardFactory.buildCalcProductTypeMenu()
-        )
+        sendOrEditMessage(bot, chatId, textProvider.get("calc.prompt.choose_product"), keyboardFactory.buildCalcProductTypeMenu(), editPrevious = false)
     }
 
     private fun handleLlmChat(env: TextHandlerEnvironment, text: String) {
@@ -209,13 +250,13 @@ class ResponseHandler(
                     updatedHistory.removeFirst()
                 }
                 sessionManager.updateSession(chatId, session.copy(conversationHistory = updatedHistory))
-                sendMessage(chatId, result, null)
+                sendOrEditMessage(env.bot, chatId, result, null, editPrevious = false)
             }
         )
         if (jobQueue.submit(job)) {
-            sendMessage(chatId, textProvider.get("llm.in_queue"), null)
+            sendOrEditMessage(env.bot, chatId, textProvider.get("llm.in_queue"), null, editPrevious = false)
         } else {
-            sendMessage(chatId, textProvider.get("llm.error"), null)
+            sendOrEditMessage(env.bot, chatId, textProvider.get("llm.error"), null, editPrevious = false)
         }
     }
 
@@ -231,33 +272,19 @@ class ResponseHandler(
         when (productType) {
             "badge" -> {
                 sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_BADGE_TYPE))
-                val keyboard = keyboardFactory.buildCalcBadgeTypeMenu()
-                bot.sendMessage(
-                    chatId = ChatId.fromId(chatId),
-                    text = textProvider.get("calc.prompt.choose_badge_type"),
-                    replyMarkup = keyboard
-                )
+                sendOrEditMessage(bot, chatId, textProvider.get("calc.prompt.choose_badge_type"), keyboardFactory.buildCalcBadgeTypeMenu())
             }
             "digital_printing" -> {
                 sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_PAPER_TYPE))
-                val keyboard = keyboardFactory.buildCalcPaperTypeMenu()
-                bot.sendMessage(
-                    chatId = ChatId.fromId(chatId),
-                    text = textProvider.get("calc.prompt.choose_paper_type"),
-                    replyMarkup = keyboard
-                )
+                sendOrEditMessage(bot, chatId, textProvider.get("calc.prompt.choose_paper_type"), keyboardFactory.buildCalcPaperTypeMenu())
             }
             "cutting", "cutting_and_printing" -> {
                 sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_MATERIAL_CATEGORY))
-                bot.sendMessage(
-                    chatId = ChatId.fromId(chatId),
-                    text = textProvider.get("calc.prompt.choose_material_category"),
-                    replyMarkup = keyboardFactory.buildCalcMaterialCategoryMenu()
-                )
+                sendOrEditMessage(bot, chatId, textProvider.get("calc.prompt.choose_material_category"), keyboardFactory.buildCalcMaterialCategoryMenu())
             }
             else -> {
                 logger.error("Неизвестный тип продукта: $productType")
-                sendMessage(chatId, "Произошла ошибка, неизвестный тип продукта.", null)
+                sendOrEditMessage(bot, chatId, "Произошла ошибка, неизвестный тип продукта.", null, editPrevious = false)
             }
         }
     }
@@ -272,13 +299,13 @@ class ResponseHandler(
             calcData.size = parts[1]
         } else {
             logger.error("Некорректный формат badgeType: $badgeType")
-            sendMessage(chatId, "Ошибка: неверный формат типа значка. Начните заново.", null)
+            sendOrEditMessage(bot, chatId, "Ошибка: неверный формат типа значка. Начните заново.", null, editPrevious = false)
             startCalculation(bot, chatId)
             return
         }
 
         sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_QUANTITY))
-        bot.sendMessage(ChatId.fromId(chatId), textProvider.get("calc.prompt.enter_quantity"))
+        sendOrEditMessage(bot, chatId, textProvider.get("calc.prompt.enter_quantity"), null)
     }
 
     private fun handlePaperTypeSelected(bot: Bot, chatId: Long, paperType: String) {
@@ -288,11 +315,7 @@ class ResponseHandler(
         calcData.material = paperType
 
         sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_PRINT_SIDES))
-        bot.sendMessage(
-            chatId = ChatId.fromId(chatId),
-            text = textProvider.get("calc.prompt.choose_print_sides"),
-            replyMarkup = keyboardFactory.buildCalcPrintSidesMenu()
-        )
+        sendOrEditMessage(bot, chatId, textProvider.get("calc.prompt.choose_print_sides"), keyboardFactory.buildCalcPrintSidesMenu())
     }
 
     private fun handlePrintSidesSelected(bot: Bot, chatId: Long, sides: Int) {
@@ -302,7 +325,7 @@ class ResponseHandler(
         calcData.printingSides = sides
 
         sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_QUANTITY))
-        bot.sendMessage(ChatId.fromId(chatId), textProvider.get("calc.prompt.enter_quantity"))
+        sendOrEditMessage(bot, chatId, textProvider.get("calc.prompt.enter_quantity"), null)
     }
 
     private fun handleQuantitySelected(bot: Bot, chatId: Long, text: String) {
@@ -311,7 +334,7 @@ class ResponseHandler(
 
         val quantity = text.toIntOrNull()
         if (quantity == null || quantity <= 0) {
-            sendMessage(chatId, textProvider.get("calc.error.invalid_number"), null)
+            sendOrEditMessage(bot, chatId, textProvider.get("calc.error.invalid_number"), null, editPrevious = false)
             return
         }
 
@@ -327,23 +350,11 @@ class ResponseHandler(
         val keyboard = keyboardFactory.buildCalcMaterialMenu(category)
         if (keyboard == null) {
             logger.error("Не удалось создать клавиатуру для категории материалов '$category' или в ней нет материалов.")
-            bot.sendMessage(
-                chatId = ChatId.fromId(chatId),
-                text = "В категории '$category' не найдено материалов для расчета. Пожалуйста, выберите другую категорию."
-            )
-            bot.sendMessage(
-                chatId = ChatId.fromId(chatId),
-                text = textProvider.get("calc.prompt.choose_material_category"),
-                replyMarkup = keyboardFactory.buildCalcMaterialCategoryMenu()
-            )
+            sendOrEditMessage(bot, chatId, "В категории '$category' не найдено материалов для расчета. Пожалуйста, выберите другую категорию.", keyboardFactory.buildCalcMaterialCategoryMenu())
             return
         }
+        sendOrEditMessage(bot, chatId, textProvider.get("calc.prompt.choose_material"), keyboard)
 
-        bot.sendMessage(
-            chatId = ChatId.fromId(chatId),
-            text = textProvider.get("calc.prompt.choose_material"),
-            replyMarkup = keyboard
-        )
     }
 
     private fun handleMaterialSelected(bot: Bot, chatId: Long, materialKey: String) {
@@ -365,10 +376,7 @@ class ResponseHandler(
 
         sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_DIMENSIONS))
         val materialDisplayName = textProvider.get("material.$materialKey")
-        bot.sendMessage(
-            chatId = ChatId.fromId(chatId),
-            text = textProvider.get("calc.prompt.enter_dimensions", materialDisplayName)
-        )
+        sendOrEditMessage(bot, chatId, textProvider.get("calc.prompt.enter_dimensions", materialDisplayName), null)
     }
 
     private fun handleDimensionsSelected(bot: Bot, chatId: Long, text: String) {
@@ -386,21 +394,17 @@ class ResponseHandler(
                 calcData.diameterCm = parts[0]
             }
             else -> {
-                sendMessage(chatId, textProvider.get("calc.error.invalid_dimensions"), null)
+                sendOrEditMessage(bot, chatId, textProvider.get("calc.error.invalid_dimensions"), null, editPrevious = false)
                 return
             }
         }
 
         if (calcData.productType == "cutting_and_printing") {
             sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_PRINT_LAYERS))
-            bot.sendMessage(
-                chatId = ChatId.fromId(chatId),
-                text = textProvider.get("calc.prompt.choose_print_layers"),
-                replyMarkup = keyboardFactory.buildCalcPrintLayersMenu()
-            )
+            sendOrEditMessage(bot, chatId, textProvider.get("calc.prompt.choose_print_layers"), keyboardFactory.buildCalcPrintLayersMenu(), editPrevious = false)
         } else {
             sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_QUANTITY))
-            bot.sendMessage(ChatId.fromId(chatId), textProvider.get("calc.prompt.enter_quantity"))
+            sendOrEditMessage(bot, chatId, textProvider.get("calc.prompt.enter_quantity"), null, editPrevious = false)
         }
     }
 
@@ -410,7 +414,7 @@ class ResponseHandler(
         calcData.printingLayers = layers
 
         sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_QUANTITY))
-        bot.sendMessage(ChatId.fromId(chatId), textProvider.get("calc.prompt.enter_quantity"))
+        sendOrEditMessage(bot, chatId, textProvider.get("calc.prompt.enter_quantity"), null)
     }
 
 
@@ -421,20 +425,20 @@ class ResponseHandler(
         val params = calcData.toOrderParameters()
         if (params == null) {
             logger.error("Не удалось создать OrderParameters из CalculationData для чата $chatId")
-            sendMessage(chatId, "Произошла внутренняя ошибка при подготовке данных для расчета.", null)
+            sendOrEditMessage(bot, chatId, "Произошла внутренняя ошибка при подготовке данных для расчета.", null, editPrevious = false)
             return
         }
 
         val result = calculatorService.calculate(params)
         val resultText = formatCalculationResult(result)
 
-        sendMessage(chatId, textProvider.get("calc.result.success", resultText), null)
+        sendOrEditMessage(bot, chatId, textProvider.get("calc.result.success", resultText), null, editPrevious = false)
 
         sessionManager.updateSession(chatId, session.copy(
             mode = UserMode.MAIN_MENU,
             currentCalculation = null
         ))
-        showMainMenu(bot, chatId)
+        showMainMenu(bot, chatId, editPrevious = false)
     }
 
 

@@ -64,5 +64,6 @@ data class UserSession(
     val mode: UserMode = UserMode.AWAITING_NAME,
     val name: String? = null,
     val conversationHistory: MutableList<Pair<String, String>> = mutableListOf(),
-    var currentCalculation: CalculationData? = null
+    var currentCalculation: CalculationData? = null,
+    var lastBotMessageId: Long? = null
 )
