@@ -114,6 +114,21 @@ class ResponseHandler(
             UserMode.AWAITING_OPERATOR_QUERY -> handleOperatorQuery(env, text)
             UserMode.CALC_AWAITING_QUANTITY -> handleQuantitySelected(env.bot, chatId, text)
             UserMode.CALC_AWAITING_DIMENSIONS -> handleDimensionsSelected(env.bot, chatId, text)
+            UserMode.CALC_AWAITING_TEXT_DESCRIPTION -> {
+                logger.info("Получено текстовое описание заказа от {}: '{}'", chatId, text)
+
+                sendOrEditMessage(
+                    bot = env.bot,
+                    chatId = chatId,
+                    text = "Спасибо! Я получил ваше описание. В следующей версии я научусь его анализировать.",
+                    replyMarkup = null,
+                    editPrevious = false
+                )
+
+                val updatedSession = sessionManager.getSession(chatId)
+                sessionManager.updateSession(chatId, updatedSession.copy(mode = UserMode.MAIN_MENU))
+                showMainMenu(env.bot, chatId, editPrevious = false)
+            }
             else -> {
                 logger.warn("Получено текстовое сообщение в необрабатываемом режиме: {}", session.mode)
                 sendOrEditMessage(env.bot, chatId, "Пожалуйста, используйте кнопки для выбора.", null, editPrevious = false)
@@ -146,6 +161,17 @@ class ResponseHandler(
             callbackData == KeyboardFactory.CALC_PT_DIGITAL_PRINTING_CALLBACK -> handleProductTypeSelected(env.bot, chatId, "digital_printing")
             callbackData == KeyboardFactory.CALC_PT_CUTTING_CALLBACK -> handleProductTypeSelected(env.bot, chatId, "cutting")
             callbackData == KeyboardFactory.CALC_PT_CUTTING_AND_PRINTING_CALLBACK -> handleProductTypeSelected(env.bot, chatId, "cutting_and_printing")
+
+            callbackData == KeyboardFactory.CALC_PT_DESCRIBE_TEXT_CALLBACK -> {
+                val session = sessionManager.getSession(chatId)
+                sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_TEXT_DESCRIPTION))
+                sendOrEditMessage(
+                    bot = env.bot,
+                    chatId = chatId,
+                    text = textProvider.get("calc.prompt.describe_text"),
+                    replyMarkup = keyboardFactory.buildBackToMainMenuKeyboard()
+                )
+            }
 
             callbackData.startsWith(KeyboardFactory.CALC_BADGE_TYPE_PREFIX) -> {
                 val badgeType = callbackData.removePrefix(KeyboardFactory.CALC_BADGE_TYPE_PREFIX)

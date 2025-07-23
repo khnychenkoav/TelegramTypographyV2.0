@@ -26,8 +26,9 @@ class KeyboardFactory(
         const val CALC_MATERIAL_CATEGORY_PREFIX = "calc_mat_cat_"
         const val CALC_MATERIAL_PREFIX = "calc_material_"
         const val CALC_PRINT_LAYERS_PREFIX = "calc_print_layers_"
-        const val BACK_TO_MAIN_MENU_CALLBACK = "back_to_main_menu"
+        const val CALC_PT_DESCRIBE_TEXT_CALLBACK = "calc_pt_describe_text"
 
+        const val BACK_TO_MAIN_MENU_CALLBACK = "back_to_main_menu"
         const val BACK_CALLBACK_PREFIX = "back_to_"
         const val DEST_CALC_START = "calc_start"
         const val DEST_CHOOSE_PAPER = "choose_paper"
@@ -84,6 +85,12 @@ class KeyboardFactory(
                 InlineKeyboardButton.CallbackData(
                     text = textProvider.get("button.calc.product_cutting_and_printing"),
                     callbackData = CALC_PT_CUTTING_AND_PRINTING_CALLBACK
+                )
+            ),
+            listOf(
+                InlineKeyboardButton.CallbackData(
+                    text = textProvider.get("button.calc.describe_text"),
+                    callbackData = CALC_PT_DESCRIBE_TEXT_CALLBACK
                 )
             ),
             listOf(
