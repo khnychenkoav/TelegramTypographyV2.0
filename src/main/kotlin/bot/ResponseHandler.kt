@@ -114,20 +114,20 @@ class ResponseHandler(
             UserMode.AWAITING_OPERATOR_QUERY -> handleOperatorQuery(env, text)
             UserMode.CALC_AWAITING_QUANTITY -> handleQuantitySelected(env.bot, chatId, text)
             UserMode.CALC_AWAITING_DIMENSIONS -> handleDimensionsSelected(env.bot, chatId, text)
-            UserMode.CALC_AWAITING_TEXT_DESCRIPTION -> {
-                logger.info("Получено текстовое описание заказа от {}: '{}'", chatId, text)
+            UserMode.CALC_AWAITING_AI_ESTIMATION -> {
+                sendOrEditMessage(env.bot, chatId, textProvider.get("llm.in_queue"), null, editPrevious = true)
 
-                sendOrEditMessage(
-                    bot = env.bot,
+                val job = LlmJob(
                     chatId = chatId,
-                    text = "Спасибо! Я получил ваше описание. В следующей версии я научусь его анализировать.",
-                    replyMarkup = null,
-                    editPrevious = false
+                    systemPrompt = textProvider.get("llm.system_prompt.estimator"),
+                    history = emptyList(),
+                    newUserPrompt = text,
+                    onResult = { result ->
+                        sendOrEditMessage(env.bot, chatId, result, null, editPrevious = false)
+                        showMainMenu(env.bot, chatId, editPrevious = false)
+                    }
                 )
-
-                val updatedSession = sessionManager.getSession(chatId)
-                sessionManager.updateSession(chatId, updatedSession.copy(mode = UserMode.MAIN_MENU))
-                showMainMenu(env.bot, chatId, editPrevious = false)
+                jobQueue.submit(job)
             }
             else -> {
                 logger.warn("Получено текстовое сообщение в необрабатываемом режиме: {}", session.mode)
@@ -162,13 +162,13 @@ class ResponseHandler(
             callbackData == KeyboardFactory.CALC_PT_CUTTING_CALLBACK -> handleProductTypeSelected(env.bot, chatId, "cutting")
             callbackData == KeyboardFactory.CALC_PT_CUTTING_AND_PRINTING_CALLBACK -> handleProductTypeSelected(env.bot, chatId, "cutting_and_printing")
 
-            callbackData == KeyboardFactory.CALC_PT_DESCRIBE_TEXT_CALLBACK -> {
+            callbackData == KeyboardFactory.CALC_PT_AI_ESTIMATION_CALLBACK -> {
                 val session = sessionManager.getSession(chatId)
-                sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_TEXT_DESCRIPTION))
+                sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_AI_ESTIMATION))
                 sendOrEditMessage(
                     bot = env.bot,
                     chatId = chatId,
-                    text = textProvider.get("calc.prompt.describe_text"),
+                    text = textProvider.get("calc.prompt.ai_estimation"),
                     replyMarkup = keyboardFactory.buildBackToMainMenuKeyboard()
                 )
             }

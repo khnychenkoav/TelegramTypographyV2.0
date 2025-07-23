@@ -26,7 +26,7 @@ class KeyboardFactory(
         const val CALC_MATERIAL_CATEGORY_PREFIX = "calc_mat_cat_"
         const val CALC_MATERIAL_PREFIX = "calc_material_"
         const val CALC_PRINT_LAYERS_PREFIX = "calc_print_layers_"
-        const val CALC_PT_DESCRIBE_TEXT_CALLBACK = "calc_pt_describe_text"
+        const val CALC_PT_AI_ESTIMATION_CALLBACK = "calc_pt_ai_estimation"
 
         const val BACK_TO_MAIN_MENU_CALLBACK = "back_to_main_menu"
         const val BACK_CALLBACK_PREFIX = "back_to_"
@@ -89,8 +89,8 @@ class KeyboardFactory(
             ),
             listOf(
                 InlineKeyboardButton.CallbackData(
-                    text = textProvider.get("button.calc.describe_text"),
-                    callbackData = CALC_PT_DESCRIBE_TEXT_CALLBACK
+                    text = textProvider.get("button.calc.ai_estimation"),
+                    callbackData = CALC_PT_AI_ESTIMATION_CALLBACK
                 )
             ),
             listOf(
