@@ -26,6 +26,14 @@ class KeyboardFactory(
         const val CALC_MATERIAL_CATEGORY_PREFIX = "calc_mat_cat_"
         const val CALC_MATERIAL_PREFIX = "calc_material_"
         const val CALC_PRINT_LAYERS_PREFIX = "calc_print_layers_"
+        const val BACK_TO_MAIN_MENU_CALLBACK = "back_to_main_menu"
+
+        const val BACK_CALLBACK_PREFIX = "back_to_"
+        const val DEST_CALC_START = "calc_start"
+        const val DEST_CHOOSE_PAPER = "choose_paper"
+        const val DEST_CHOOSE_SIDES = "choose_sides"
+        const val DEST_CHOOSE_MATERIAL_CAT = "choose_material_cat"
+        const val DEST_CHOOSE_MATERIAL = "choose_material"
     }
 
 
@@ -77,6 +85,12 @@ class KeyboardFactory(
                     text = textProvider.get("button.calc.product_cutting_and_printing"),
                     callbackData = CALC_PT_CUTTING_AND_PRINTING_CALLBACK
                 )
+            ),
+            listOf(
+                InlineKeyboardButton.CallbackData(
+                    text = textProvider.get("button.back_to_main_menu"),
+                    callbackData = BACK_TO_MAIN_MENU_CALLBACK
+                )
             )
         )
     }
@@ -91,7 +105,7 @@ class KeyboardFactory(
             )
         }
 
-        return InlineKeyboardMarkup.create(buttons.chunked(2))
+        return InlineKeyboardMarkup.create(buttons.chunked(2) + listOf(listOf(backButton(DEST_CALC_START))))
     }
 
     fun buildCalcPaperTypeMenu(): InlineKeyboardMarkup? {
@@ -102,7 +116,7 @@ class KeyboardFactory(
                 callbackData = "$CALC_PAPER_TYPE_PREFIX$paperTypeKey"
             )
         }
-        return InlineKeyboardMarkup.create(buttons.chunked(2))
+        return InlineKeyboardMarkup.create(buttons.chunked(2) + listOf(listOf(backButton(DEST_CALC_START))))
     }
 
     fun buildCalcPrintSidesMenu(): InlineKeyboardMarkup {
@@ -116,7 +130,8 @@ class KeyboardFactory(
                     text = "Двухсторонняя (4+4)",
                     callbackData = "${CALC_PRINT_SIDES_PREFIX}2"
                 )
-            )
+            ),
+            listOf(backButton(DEST_CHOOSE_PAPER))
         )
     }
 
@@ -139,7 +154,7 @@ class KeyboardFactory(
                 callbackData = "$CALC_MATERIAL_CATEGORY_PREFIX$categoryKey"
             )
         }
-        return InlineKeyboardMarkup.create(buttons.chunked(2))
+        return InlineKeyboardMarkup.create(buttons.chunked(2) + listOf(listOf(backButton(DEST_CALC_START))))
     }
 
     fun buildCalcMaterialMenu(category: String): InlineKeyboardMarkup? {
@@ -164,7 +179,7 @@ class KeyboardFactory(
                 callbackData = "$CALC_MATERIAL_PREFIX$materialKey"
             )
         }
-        return InlineKeyboardMarkup.create(buttons.chunked(2))
+        return InlineKeyboardMarkup.create(buttons.chunked(2) + listOf(listOf(backButton(DEST_CHOOSE_MATERIAL_CAT))))
     }
 
     fun buildCalcPrintLayersMenu(): InlineKeyboardMarkup {
@@ -186,7 +201,26 @@ class KeyboardFactory(
                     text = textProvider.get("button.calc.layers_3"),
                     callbackData = "${CALC_PRINT_LAYERS_PREFIX}3"
                 )
+            ),
+            listOf(backButton(DEST_CHOOSE_MATERIAL_CAT))
+        )
+    }
+
+    fun buildBackToMainMenuKeyboard(): InlineKeyboardMarkup {
+        return InlineKeyboardMarkup.create(
+            listOf(
+                InlineKeyboardButton.CallbackData(
+                    text = textProvider.get("button.back_to_main_menu"),
+                    callbackData = BACK_TO_MAIN_MENU_CALLBACK
+                )
             )
+        )
+    }
+
+    private fun backButton(destination: String): InlineKeyboardButton.CallbackData {
+        return InlineKeyboardButton.CallbackData(
+            text = textProvider.get("button.back"),
+            callbackData = "$BACK_CALLBACK_PREFIX$destination"
         )
     }
 }

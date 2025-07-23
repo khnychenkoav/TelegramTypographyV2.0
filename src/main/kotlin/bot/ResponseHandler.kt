@@ -130,6 +130,18 @@ class ResponseHandler(
             callbackData == KeyboardFactory.START_CHAT_CALLBACK -> startLlmChat(env.bot, chatId)
             callbackData == KeyboardFactory.CONTACT_OPERATOR_CALLBACK -> startOperatorQuery(env.bot, chatId)
             callbackData == KeyboardFactory.CALCULATE_ORDER_CALLBACK -> startCalculation(env.bot, chatId)
+
+            callbackData == KeyboardFactory.BACK_TO_MAIN_MENU_CALLBACK -> {
+                val session = sessionManager.getSession(chatId)
+                sessionManager.updateSession(chatId, session.copy(mode = UserMode.MAIN_MENU))
+                showMainMenu(env.bot, chatId)
+            }
+
+            callbackData.startsWith(KeyboardFactory.BACK_CALLBACK_PREFIX) -> {
+                val destination = callbackData.removePrefix(KeyboardFactory.BACK_CALLBACK_PREFIX)
+                handleBackNavigation(env.bot, chatId, destination)
+            }
+
             callbackData == KeyboardFactory.CALC_PT_BADGE_CALLBACK -> handleProductTypeSelected(env.bot, chatId, "badge")
             callbackData == KeyboardFactory.CALC_PT_DIGITAL_PRINTING_CALLBACK -> handleProductTypeSelected(env.bot, chatId, "digital_printing")
             callbackData == KeyboardFactory.CALC_PT_CUTTING_CALLBACK -> handleProductTypeSelected(env.bot, chatId, "cutting")
@@ -182,13 +194,23 @@ class ResponseHandler(
     private fun startLlmChat(bot: Bot, chatId: Long) {
         val session = sessionManager.getSession(chatId)
         sessionManager.updateSession(chatId, session.copy(mode = UserMode.LLM_CHAT))
-        sendOrEditMessage(bot, chatId, textProvider.get("callback.chat.prompt"), null)
+        sendOrEditMessage(
+            bot = bot,
+            chatId = chatId,
+            text = textProvider.get("callback.chat.prompt"),
+            replyMarkup = keyboardFactory.buildBackToMainMenuKeyboard()
+        )
     }
 
     private fun startOperatorQuery(bot: Bot, chatId: Long) {
         val session = sessionManager.getSession(chatId)
         sessionManager.updateSession(chatId, session.copy(mode = UserMode.AWAITING_OPERATOR_QUERY))
-        sendOrEditMessage(bot, chatId, textProvider.get("callback.operator.prompt"), null)
+        sendOrEditMessage(
+            bot = bot,
+            chatId = chatId,
+            text = textProvider.get("callback.operator.prompt"),
+            replyMarkup = keyboardFactory.buildBackToMainMenuKeyboard()
+        )
     }
 
     private fun handleOperatorQuery(env: TextHandlerEnvironment, text: String) {
@@ -471,5 +493,36 @@ class ResponseHandler(
         builder.append("Итоговая стоимость: *${formatter.format(result.finalTotalPrice)} ₽*")
 
         return builder.toString()
+    }
+
+    private fun handleBackNavigation(bot: Bot, chatId: Long, destination: String) {
+        val session = sessionManager.getSession(chatId)
+        when (destination) {
+            KeyboardFactory.DEST_CALC_START -> {
+                startCalculation(bot, chatId)
+            }
+            KeyboardFactory.DEST_CHOOSE_PAPER -> {
+                sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_PAPER_TYPE))
+                sendOrEditMessage(
+                    bot = bot,
+                    chatId = chatId,
+                    text = textProvider.get("calc.prompt.choose_paper_type"),
+                    replyMarkup = keyboardFactory.buildCalcPaperTypeMenu()
+                )
+            }
+            KeyboardFactory.DEST_CHOOSE_MATERIAL_CAT -> {
+                sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_MATERIAL_CATEGORY))
+                sendOrEditMessage(
+                    bot = bot,
+                    chatId = chatId,
+                    text = textProvider.get("calc.prompt.choose_material_category"),
+                    replyMarkup = keyboardFactory.buildCalcMaterialCategoryMenu()
+                )
+            }
+            else -> {
+                logger.warn("Неизвестное направление для возврата: $destination")
+                showMainMenu(bot, chatId)
+            }
+        }
     }
 }
