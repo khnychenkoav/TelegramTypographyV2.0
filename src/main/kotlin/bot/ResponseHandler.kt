@@ -148,8 +148,31 @@ class ResponseHandler(
 
     private fun handleOperatorQuery(env: TextHandlerEnvironment, text: String) {
         val chatId = env.message.chat.id
-        // TODO: Реализовать логику пересылки сообщения оператору
-        sendMessage(chatId, textProvider.get("operator.query.received", text), null)
+        val user = env.message.from ?: return
+        val userName = user.firstName + (user.lastName?.let { " $it" } ?: "")
+        val userMention = "[${userName}](tg://user?id=${user.id})"
+
+        val messageForOperator = """
+        ❗️*Новый вопрос оператору*❗️
+        
+        *От:* $userMention
+        *ID чата:* `${user.id}`
+        
+        *Сообщение:*
+        ${escapeMarkdownV1(text)}
+    """.trimIndent()
+
+        if (org.example.utils.OPERATOR_CHAT_ID != 0L) {
+            env.bot.sendMessage(
+                chatId = ChatId.fromId(org.example.utils.OPERATOR_CHAT_ID),
+                text = messageForOperator,
+                parseMode = com.github.kotlintelegrambot.entities.ParseMode.MARKDOWN
+            )
+            sendMessage(chatId, textProvider.get("operator.query.received"), null)
+        } else {
+            logger.warn("OPERATOR_CHAT_ID не настроен. Сообщение не отправлено.")
+            sendMessage(chatId, "К сожалению, связь с оператором временно недоступна. Пожалуйста, попробуйте позже.", null)
+        }
 
         val session = sessionManager.getSession(chatId)
         sessionManager.updateSession(chatId, session.copy(mode = UserMode.MAIN_MENU))
