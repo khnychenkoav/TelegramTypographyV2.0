@@ -5,7 +5,9 @@ import org.example.bot.TypographyBot
 import org.example.calculation.CalculatorService
 import org.example.calculation.PriceListProvider
 import org.example.processing.JobQueue
+import org.example.services.GigaChatServiceImpl
 import org.example.services.LlamaCliServiceImpl
+import org.example.services.LlmService
 import org.example.services.TranslationService
 import org.example.state.SessionManager
 import org.example.utils.TextProvider
@@ -19,7 +21,8 @@ fun main() {
     val priceListProvider = PriceListProvider()
     val calculatorService = CalculatorService(priceListProvider, textProvider)
     val localLlmService = LlamaCliServiceImpl(llamaBinaryPath, modelPath, translationService)
-    val jobQueue = JobQueue(localLlmService)
+    val llmService: LlmService = GigaChatServiceImpl()
+    val jobQueue = JobQueue(llmService)
     val sessionManager = SessionManager()
     val responseHandler = ResponseHandler(sessionManager, textProvider, jobQueue, calculatorService, priceListProvider)
     val typographyBot = TypographyBot(responseHandler)

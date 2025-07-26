@@ -547,15 +547,37 @@ class ResponseHandler(
         }
 
         val result = calculatorService.calculate(params)
-        val resultText = formatCalculationResult(result)
 
-        sendOrEditMessage(bot, chatId, textProvider.get("calc.result.success", resultText), null, editPrevious = false)
+        val hasErrors = result.comments.any {
+            it.contains("не найден", ignoreCase = true) ||
+                    it.contains("ошибка", ignoreCase = true) ||
+                    it.contains("необходимо указать", ignoreCase = true)
+        }
 
-        sessionManager.updateSession(chatId, session.copy(
-            mode = UserMode.MAIN_MENU,
-            currentCalculation = null
-        ))
-        showMainMenu(bot, chatId, editPrevious = false)
+        if (hasErrors || result.finalTotalPrice == 0.0) {
+            val resultText = formatCalculationResult(result)
+            sendOrEditMessage(bot, chatId, textProvider.get("calc.result.success", resultText), null, editPrevious = false)
+            sessionManager.updateSession(chatId, session.copy(mode = UserMode.MAIN_MENU, currentCalculation = null))
+            showMainMenu(bot, chatId, editPrevious = false)
+        } else {
+            val resultTextForLlm = formatCalculationResult(result)
+            val initialMessage = textProvider.get("calc.result.success", resultTextForLlm)
+
+            sendOrEditMessage(bot, chatId, textProvider.get("llm.in_queue"), null, editPrevious = true)
+
+            val job = LlmJob(
+                chatId = chatId,
+                systemPrompt = textProvider.get("llm.system_prompt.commentator"),
+                history = emptyList(),
+                newUserPrompt = initialMessage,
+                onResult = { llmResponse ->
+                    sendOrEditMessage(bot, chatId, llmResponse, null, editPrevious = true)
+                    sessionManager.updateSession(chatId, session.copy(mode = UserMode.MAIN_MENU, currentCalculation = null))
+                    showMainMenu(bot, chatId, editPrevious = false)
+                }
+            )
+            jobQueue.submit(job)
+        }
     }
 
 

@@ -36,7 +36,11 @@ class TypographyBot(private val responseHandler: ResponseHandler) {
                     responseHandler.onCallbackQuery(this)
                 }
 
-                message {
+                val fileFilter = Filter.Custom {
+                    this.document != null || this.photo != null
+                }
+
+                message(fileFilter) {
                     responseHandler.onFileReceived(this)
                 }
             }
