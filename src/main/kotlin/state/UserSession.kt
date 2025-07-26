@@ -21,7 +21,9 @@ enum class UserMode {
     CALC_AWAITING_DIMENSIONS,             // Ожидание ввода размеров (ширина/высота или диаметр)
     CALC_AWAITING_PRINT_LAYERS,           // Ожидание ввода слоев печати (только для резки+печати)
 
-    CALC_AWAITING_AI_ESTIMATION
+    CALC_AWAITING_AI_ESTIMATION,
+
+    AWAITING_FILE_CAPTION
 }
 
 data class CalculationData(

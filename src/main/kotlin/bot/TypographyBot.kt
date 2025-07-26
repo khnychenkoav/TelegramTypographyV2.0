@@ -9,6 +9,9 @@ import com.github.kotlintelegrambot.dispatcher.text
 import com.github.kotlintelegrambot.entities.ChatId
 import com.github.kotlintelegrambot.logging.LogLevel
 import com.github.kotlintelegrambot.entities.ParseMode
+import com.github.kotlintelegrambot.dispatcher.document
+import com.github.kotlintelegrambot.dispatcher.message
+import com.github.kotlintelegrambot.extensions.filters.Filter
 import org.example.utils.BOT_TOKEN
 
 class TypographyBot(private val responseHandler: ResponseHandler) {
@@ -31,6 +34,10 @@ class TypographyBot(private val responseHandler: ResponseHandler) {
                 }
                 callbackQuery {
                     responseHandler.onCallbackQuery(this)
+                }
+
+                message {
+                    responseHandler.onFileReceived(this)
                 }
             }
         }

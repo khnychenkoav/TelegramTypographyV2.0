@@ -35,6 +35,10 @@ class KeyboardFactory(
         const val DEST_CHOOSE_SIDES = "choose_sides"
         const val DEST_CHOOSE_MATERIAL_CAT = "choose_material_cat"
         const val DEST_CHOOSE_MATERIAL = "choose_material"
+
+        const val INFO_CALLBACK = "info"
+        const val INFO_ADDRESSES_CALLBACK = "info_addresses"
+        const val INFO_FILE_REQ_CALLBACK = "info_file_req"
     }
 
 
@@ -56,6 +60,10 @@ class KeyboardFactory(
                 InlineKeyboardButton.CallbackData(
                     text = textProvider.get("button.contact_operator"),
                     callbackData = CONTACT_OPERATOR_CALLBACK
+                ),
+                InlineKeyboardButton.CallbackData(
+                    text = textProvider.get("button.info"),
+                    callbackData = INFO_CALLBACK
                 )
             )
         )
@@ -215,6 +223,29 @@ class KeyboardFactory(
 
     fun buildBackToMainMenuKeyboard(): InlineKeyboardMarkup {
         return InlineKeyboardMarkup.create(
+            listOf(
+                InlineKeyboardButton.CallbackData(
+                    text = textProvider.get("button.back_to_main_menu"),
+                    callbackData = BACK_TO_MAIN_MENU_CALLBACK
+                )
+            )
+        )
+    }
+
+    fun buildInfoMenu(): InlineKeyboardMarkup {
+        return InlineKeyboardMarkup.create(
+            listOf(
+                InlineKeyboardButton.CallbackData(
+                    text = textProvider.get("button.info.addresses"),
+                    callbackData = INFO_ADDRESSES_CALLBACK
+                )
+            ),
+            listOf(
+                InlineKeyboardButton.CallbackData(
+                    text = textProvider.get("button.info.file_requirements"),
+                    callbackData = INFO_FILE_REQ_CALLBACK
+                )
+            ),
             listOf(
                 InlineKeyboardButton.CallbackData(
                     text = textProvider.get("button.back_to_main_menu"),

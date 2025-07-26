@@ -7,6 +7,7 @@ import com.github.kotlintelegrambot.dispatcher.handlers.TextHandlerEnvironment
 import com.github.kotlintelegrambot.entities.ChatId
 import com.github.kotlintelegrambot.entities.InlineKeyboardMarkup
 import com.github.kotlintelegrambot.network.fold
+import com.github.kotlintelegrambot.dispatcher.handlers.MessageHandlerEnvironment
 import org.example.calculation.CalculatorService
 import org.example.calculation.PriceListProvider
 import org.example.calculation.models.CalculationResult
@@ -129,6 +130,28 @@ class ResponseHandler(
                 )
                 jobQueue.submit(job)
             }
+            UserMode.AWAITING_FILE_CAPTION -> {
+                val user = env.message.from ?: return
+                val userName = user.firstName + (user.lastName?.let { " $it" } ?: "")
+                val userMention = "[${userName}](tg://user?id=${user.id})"
+
+                val messageForOperator = """
+            *Комментарий к файлу от* $userMention:
+            
+            ${escapeMarkdownV1(text)}
+        """.trimIndent()
+
+                if (org.example.utils.OPERATOR_CHAT_ID != 0L) {
+                    env.bot.sendMessage(
+                        chatId = ChatId.fromId(org.example.utils.OPERATOR_CHAT_ID),
+                        text = messageForOperator,
+                        parseMode = com.github.kotlintelegrambot.entities.ParseMode.MARKDOWN
+                    )
+                }
+                sendOrEditMessage(env.bot, chatId, textProvider.get("file.caption.received"), null, editPrevious = false)
+                sessionManager.updateSession(chatId, session.copy(mode = UserMode.MAIN_MENU))
+                showMainMenu(env.bot, chatId, editPrevious = false)
+            }
             else -> {
                 logger.warn("Получено текстовое сообщение в необрабатываемом режиме: {}", session.mode)
                 sendOrEditMessage(env.bot, chatId, "Пожалуйста, используйте кнопки для выбора.", null, editPrevious = false)
@@ -145,6 +168,31 @@ class ResponseHandler(
             callbackData == KeyboardFactory.START_CHAT_CALLBACK -> startLlmChat(env.bot, chatId)
             callbackData == KeyboardFactory.CONTACT_OPERATOR_CALLBACK -> startOperatorQuery(env.bot, chatId)
             callbackData == KeyboardFactory.CALCULATE_ORDER_CALLBACK -> startCalculation(env.bot, chatId)
+
+            callbackData == KeyboardFactory.INFO_CALLBACK -> {
+                sendOrEditMessage(
+                    bot = env.bot,
+                    chatId = chatId,
+                    text = textProvider.get("info.prompt"),
+                    replyMarkup = keyboardFactory.buildInfoMenu()
+                )
+            }
+            callbackData == KeyboardFactory.INFO_ADDRESSES_CALLBACK -> {
+                sendOrEditMessage(
+                    bot = env.bot,
+                    chatId = chatId,
+                    text = textProvider.get("info.text.addresses"),
+                    replyMarkup = keyboardFactory.buildInfoMenu()
+                )
+            }
+            callbackData == KeyboardFactory.INFO_FILE_REQ_CALLBACK -> {
+                sendOrEditMessage(
+                    bot = env.bot,
+                    chatId = chatId,
+                    text = textProvider.get("info.text.file_requirements"),
+                    replyMarkup = keyboardFactory.buildInfoMenu()
+                )
+            }
 
             callbackData == KeyboardFactory.BACK_TO_MAIN_MENU_CALLBACK -> {
                 val session = sessionManager.getSession(chatId)
@@ -204,6 +252,27 @@ class ResponseHandler(
         }
     }
 
+    fun onFileReceived(env: MessageHandlerEnvironment) {
+        val chatId = env.message.chat.id
+        val session = sessionManager.getSession(chatId)
+
+        if (session.mode != UserMode.MAIN_MENU && session.mode != UserMode.LLM_CHAT) {
+            logger.warn("Файл получен в неподходящем режиме (${session.mode}). Игнорируем.")
+            return
+        }
+
+        if (org.example.utils.OPERATOR_CHAT_ID != 0L) {
+            env.bot.forwardMessage(
+                chatId = ChatId.fromId(org.example.utils.OPERATOR_CHAT_ID),
+                fromChatId = ChatId.fromId(chatId),
+                messageId = env.message.messageId
+            )
+        }
+
+        sessionManager.updateSession(chatId, session.copy(mode = UserMode.AWAITING_FILE_CAPTION))
+
+        sendOrEditMessage(env.bot, chatId, textProvider.get("file.received"), null, editPrevious = false)
+    }
 
     private fun handleNameInput(env: TextHandlerEnvironment, name: String) {
         val chatId = env.message.chat.id
