@@ -19,7 +19,7 @@ dependencies {
     implementation("io.ktor:ktor-client-cio:$ktorVersion")
     implementation("io.ktor:ktor-client-content-negotiation:$ktorVersion")
     implementation("io.ktor:ktor-serialization-kotlinx-json:$ktorVersion")
-    implementation("chat.giga:langchain4j-gigachat:0.1.4")
+    implementation("chat.giga:langchain4j-gigachat:0.1.10")
     testImplementation(kotlin("test"))
 }
 

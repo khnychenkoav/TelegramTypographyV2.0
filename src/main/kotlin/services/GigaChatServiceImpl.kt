@@ -4,6 +4,7 @@ import chat.giga.client.auth.AuthClient
 import chat.giga.client.auth.AuthClientBuilder
 import chat.giga.langchain4j.GigaChatChatModel
 import chat.giga.langchain4j.GigaChatChatRequestParameters
+import chat.giga.model.ModelName
 import chat.giga.model.Scope
 import dev.langchain4j.data.message.AiMessage
 import dev.langchain4j.data.message.ChatMessage
@@ -32,7 +33,6 @@ class GigaChatServiceImpl : LlmService {
     init {
         logger.info("Инициализация GigaChatServiceImpl...")
 
-        // 1. Настраиваем глобальный SSLContext. Это единственный путь из-за ограничений библиотеки.
         try {
             val sslContext = createSslContext()
             SSLContext.setDefault(sslContext)
@@ -43,7 +43,6 @@ class GigaChatServiceImpl : LlmService {
             throw IllegalStateException("Не удалось инициализировать SSL для GigaChat", e)
         }
 
-        // 2. Строим AuthClient. Он подхватит глобальный SSLContext.
         val authClient = AuthClient.builder()
             .withOAuth(
                 AuthClientBuilder.OAuthBuilder.builder()
@@ -53,10 +52,14 @@ class GigaChatServiceImpl : LlmService {
             )
             .build()
 
-        // 3. Строим саму модель.
-        // verifySslCerts(true) говорит клиенту использовать настроенный TrustManager (наш глобальный).
         model = GigaChatChatModel.builder()
             .authClient(authClient)
+            .defaultChatRequestParameters(
+                GigaChatChatRequestParameters.builder()
+                    .modelName(ModelName.GIGA_CHAT)
+                    .maxOutputTokens(1024)
+                    .build()
+            )
             .verifySslCerts(true)
             .logRequests(true)
             .logResponses(true)
@@ -103,7 +106,6 @@ class GigaChatServiceImpl : LlmService {
             }
             messages.add(UserMessage.from(newUserPrompt))
 
-            // Создаем параметры запроса, чтобы избежать NullPointerException
             val gigaParams = GigaChatChatRequestParameters.builder()
                 .modelName(model.defaultRequestParameters().modelName())
                 .maxOutputTokens(1024)
@@ -119,7 +121,6 @@ class GigaChatServiceImpl : LlmService {
 
         } catch (e: Exception) {
             logger.error("Ошибка при работе с GigaChat API", e)
-            // Возвращаем осмысленное сообщение, можно добавить детали из `e`
             return "Произошла ошибка при обращении к AI-модели: ${e.message}"
         }
     }
