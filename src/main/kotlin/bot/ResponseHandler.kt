@@ -367,7 +367,7 @@ class ResponseHandler(
                     updatedHistory.removeFirst()
                 }
                 sessionManager.updateSession(chatId, session.copy(conversationHistory = updatedHistory))
-                sendOrEditMessage(env.bot, chatId, result, null, editPrevious = false)
+                sendOrEditMessage(env.bot, chatId, result, replyMarkup = keyboardFactory.buildBackToMainMenuKeyboard(), editPrevious = false)
             }
         )
         if (jobQueue.submit(job)) {
@@ -571,7 +571,7 @@ class ResponseHandler(
                 history = emptyList(),
                 newUserPrompt = initialMessage,
                 onResult = { llmResponse ->
-                    sendOrEditMessage(bot, chatId, llmResponse, null, editPrevious = true)
+                    sendOrEditMessage(bot, chatId, llmResponse, null, editPrevious = false)
                     sessionManager.updateSession(chatId, session.copy(mode = UserMode.MAIN_MENU, currentCalculation = null))
                     showMainMenu(bot, chatId, editPrevious = false)
                 }
