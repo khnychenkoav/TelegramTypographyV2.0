@@ -1,7 +1,7 @@
 package org.example.utils
 
-const val BOT_TOKEN = "7614465674:AAGr5-zVtjklbZc7LG7zdnUfO3eTFznOpw8"
+const val BOT_TOKEN = ""
 
-const val OPERATOR_CHAT_ID = -4820276044
+const val OPERATOR_CHAT_ID =
 
-const val GIGACHAT_API_KEY = "YTUwYmE3NGEtZDEyOS00MzM1LTg3ZTYtODlkNGZkOTIyNTZhOjAzYjI4YWEzLTY4MmEtNDEzOC1iYjk5LWUwMzRkOTMzMDg5NA=="
+const val GIGACHAT_API_KEY = ""
