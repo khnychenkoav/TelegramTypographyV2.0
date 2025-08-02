@@ -9,6 +9,7 @@ import com.github.kotlintelegrambot.entities.InlineKeyboardMarkup
 import com.github.kotlintelegrambot.network.fold
 import com.github.kotlintelegrambot.dispatcher.handlers.MessageHandlerEnvironment
 import com.github.kotlintelegrambot.entities.ParseMode
+import org.example.analysis.CannedResponses
 import org.example.analysis.Complexity
 import org.example.analysis.ComplexityAnalyzer
 import org.example.calculation.CalculatorService
@@ -115,7 +116,11 @@ class ResponseHandler(
         val chatId = env.message.chat.id
         val text = env.message.text.orEmpty()
         val session = sessionManager.getSession(chatId)
-
+        val cannedResponse = CannedResponses.findResponse(text)
+        if (cannedResponse != null) {
+            sendOrEditMessage(env.bot, chatId, cannedResponse, keyboardFactory.buildBackToMainMenuKeyboard(), editPrevious = false)
+            return
+        }
         when (session.mode) {
             UserMode.AWAITING_NAME -> handleNameInput(env, text)
             UserMode.MAIN_MENU -> showMainMenu(env.bot, chatId)

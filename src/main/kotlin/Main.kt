@@ -1,5 +1,6 @@
 package org.example
 
+import org.example.analysis.CannedResponses
 import org.example.analysis.ComplexityAnalyzer
 import org.example.bot.ResponseHandler
 import org.example.bot.TypographyBot
@@ -19,6 +20,7 @@ fun main() {
     val llamaBinaryPath = "/home/artem/llama.cpp/build/bin/llama-cli"
     val modelPath = "/home/artem/llm_models/Phi-3-mini-4k-instruct-q4.gguf"
     val textProvider = TextProvider("messages_ru.properties")
+    CannedResponses
     val translationService = TranslationService()
     val priceListProvider = PriceListProvider()
     val calculatorService = CalculatorService(priceListProvider, textProvider)
