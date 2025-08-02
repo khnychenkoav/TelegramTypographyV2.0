@@ -197,6 +197,11 @@ class ResponseHandler(
                     text = textProvider.get("info.text.addresses"),
                     replyMarkup = keyboardFactory.buildInfoMenu()
                 )
+                env.bot.sendLocation(
+                    chatId = ChatId.fromId(chatId),
+                    latitude = 55.041256f,
+                    longitude = 82.930810f
+                )
             }
             callbackData == KeyboardFactory.INFO_FILE_REQ_CALLBACK -> {
                 sendOrEditMessage(
