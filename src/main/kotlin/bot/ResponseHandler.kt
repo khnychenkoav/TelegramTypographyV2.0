@@ -9,6 +9,7 @@ import com.github.kotlintelegrambot.entities.InlineKeyboardMarkup
 import com.github.kotlintelegrambot.network.fold
 import com.github.kotlintelegrambot.dispatcher.handlers.MessageHandlerEnvironment
 import com.github.kotlintelegrambot.entities.ParseMode
+import com.github.kotlintelegrambot.entities.TelegramFile
 import org.example.analysis.CannedResponses
 import org.example.analysis.Complexity
 import org.example.analysis.ComplexityAnalyzer
@@ -26,7 +27,9 @@ import org.example.state.UserMode
 import org.example.utils.OPERATOR_CHAT_ID
 import org.example.utils.TextProvider
 import org.slf4j.LoggerFactory
+import java.io.File
 import java.text.DecimalFormat
+
 
 class ResponseHandler(
     private val sessionManager: SessionManager,
@@ -367,7 +370,14 @@ class ResponseHandler(
             currentCalculation = CalculationData()
         ))
 
-        sendOrEditMessage(bot, chatId, textProvider.get("calc.prompt.choose_product"), keyboardFactory.buildCalcProductTypeMenu(), editPrevious = false)
+        sendOrEditPhotoMessage(
+            bot = bot,
+            chatId = chatId,
+            photoResourcePath = "img/TypographyBotLogo.png",
+            text = textProvider.get("calc.prompt.choose_product"),
+            replyMarkup = keyboardFactory.buildCalcProductTypeMenu(),
+            editPrevious = true
+        )
     }
 
     private fun handleLlmChat(env: TextHandlerEnvironment, text: String) {
@@ -431,24 +441,48 @@ class ResponseHandler(
 
         calculationData.productType = productType
 
+        val photoPath: String?
+        val text: String
+        val keyboard: InlineKeyboardMarkup?
+
         when (productType) {
             "badge" -> {
                 sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_BADGE_TYPE))
-                sendOrEditMessage(bot, chatId, textProvider.get("calc.prompt.choose_badge_type"), keyboardFactory.buildCalcBadgeTypeMenu())
+                photoPath = "img/calc_badges.png"
+                text = textProvider.get("calc.prompt.choose_badge_type")
+                keyboard = keyboardFactory.buildCalcBadgeTypeMenu()
             }
             "digital_printing" -> {
                 sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_PAPER_TYPE))
-                sendOrEditMessage(bot, chatId, textProvider.get("calc.prompt.choose_paper_type"), keyboardFactory.buildCalcPaperTypeMenu())
+                photoPath = "img/calc_digital_print.png"
+                text = textProvider.get("calc.prompt.choose_paper_type")
+                keyboard = keyboardFactory.buildCalcPaperTypeMenu()
             }
-            "cutting", "cutting_and_printing" -> {
+            "cutting" -> {
                 sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_MATERIAL_CATEGORY))
-                sendOrEditMessage(bot, chatId, textProvider.get("calc.prompt.choose_material_category"), keyboardFactory.buildCalcMaterialCategoryMenu())
+                photoPath = "img/calc_cutting.png"
+                text = textProvider.get("calc.prompt.choose_material_category")
+                keyboard = keyboardFactory.buildCalcMaterialCategoryMenu()
+            }
+            "cutting_and_printing" -> {
+                sessionManager.updateSession(chatId, session.copy(mode = UserMode.CALC_AWAITING_MATERIAL_CATEGORY))
+                photoPath = "img/calc_cutting_print.png"
+                text = textProvider.get("calc.prompt.choose_material_category")
+                keyboard = keyboardFactory.buildCalcMaterialCategoryMenu()
             }
             else -> {
                 logger.error("Неизвестный тип продукта: $productType")
                 sendOrEditMessage(bot, chatId, "Произошла ошибка, неизвестный тип продукта.", null, editPrevious = false)
+                return
             }
         }
+        sendOrEditPhotoMessage(
+            bot = bot,
+            chatId = chatId,
+            photoResourcePath = photoPath,
+            text = text,
+            replyMarkup = keyboard
+        )
     }
 
     private fun handleBadgeTypeSelected(bot: Bot, chatId: Long, badgeType: String) {
@@ -685,6 +719,72 @@ class ResponseHandler(
                 logger.warn("Неизвестное направление для возврата: $destination")
                 showMainMenu(bot, chatId)
             }
+        }
+    }
+
+    private fun sendOrEditPhotoMessage(
+        bot: Bot,
+        chatId: Long,
+        photoResourcePath: String?,
+        text: String,
+        replyMarkup: InlineKeyboardMarkup?,
+        editPrevious: Boolean = true
+    ) {
+        val session = sessionManager.getSession(chatId)
+        val messageIdToDelete = if (editPrevious) session.lastBotMessageId else null
+
+        if (messageIdToDelete != null) {
+            bot.deleteMessage(chatId = ChatId.fromId(chatId), messageId = messageIdToDelete)
+        }
+
+        var finalMessageId: Long? = null
+
+        if (photoResourcePath != null) {
+            val photoStream = javaClass.classLoader.getResourceAsStream(photoResourcePath)
+
+            if (photoStream == null) {
+                logger.error("Не удалось найти ресурс изображения: $photoResourcePath. Отправляю только текст.")
+                sendOrEditMessage(bot, chatId, text, replyMarkup, editPrevious = false)
+                return
+            }
+
+            val photoBytes = photoStream.readBytes()
+            photoStream.close()
+
+            val telegramFile = TelegramFile.ByByteArray(
+                fileBytes = photoBytes,
+                filename = "photo.png"
+            )
+
+            bot.sendPhoto(
+                chatId = ChatId.fromId(chatId),
+                photo = telegramFile,
+                caption = text,
+                replyMarkup = replyMarkup,
+                parseMode = ParseMode.MARKDOWN
+            ).fold(
+                { response -> finalMessageId = response?.result?.messageId },
+                { error ->
+                    logger.error("Не удалось отправить сообщение с фото: $error")
+                }
+            )
+        } else {
+            bot.sendMessage(
+                chatId = ChatId.fromId(chatId),
+                text = text,
+                replyMarkup = replyMarkup,
+                parseMode = ParseMode.MARKDOWN
+            ).fold(
+                { response -> finalMessageId = response.messageId },
+                { error ->
+                    logger.error("Не удалось отправить текстовое сообщение: $error")
+                }
+            )
+        }
+
+        finalMessageId?.let {
+            session.lastBotMessageId = it
+            sessionManager.updateSession(chatId, session)
         }
     }
 }
