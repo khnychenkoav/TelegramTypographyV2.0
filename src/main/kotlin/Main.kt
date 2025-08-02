@@ -9,6 +9,7 @@ import org.example.processing.JobQueue
 import org.example.services.GigaChatServiceImpl
 import org.example.services.LlamaCliServiceImpl
 import org.example.services.LlmService
+import org.example.services.LlmSwitcher
 import org.example.services.TranslationService
 import org.example.state.SessionManager
 import org.example.utils.TextProvider
@@ -24,7 +25,8 @@ fun main() {
     val complexityAnalyzer = ComplexityAnalyzer()
     val localLlmService = LlamaCliServiceImpl(llamaBinaryPath, modelPath, translationService)
     val llmService: LlmService = GigaChatServiceImpl()
-    val jobQueue = JobQueue(llmService)
+    LlmSwitcher.initialize(local = localLlmService, giga = llmService)
+    val jobQueue = JobQueue()
     val sessionManager = SessionManager()
     val responseHandler = ResponseHandler(sessionManager, textProvider, jobQueue, calculatorService, priceListProvider, complexityAnalyzer)
     val typographyBot = TypographyBot(responseHandler)

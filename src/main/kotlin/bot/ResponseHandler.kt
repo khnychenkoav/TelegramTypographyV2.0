@@ -16,6 +16,8 @@ import org.example.calculation.PriceListProvider
 import org.example.calculation.models.CalculationResult
 import org.example.processing.JobQueue
 import org.example.processing.LlmJob
+import org.example.services.LlmSwitcher
+import org.example.services.LlmType
 import org.example.state.CalculationData
 import org.example.state.RequestLimiter
 import org.example.state.SessionManager
@@ -382,15 +384,11 @@ class ResponseHandler(
 
         logger.info("Решено использовать ${if (useGigaChat) "GigaChat" else "Local LLM"} для чата $chatId. Причина: $reason")
 
-        val llmServiceToUse = if (useGigaChat) {
+        if (useGigaChat) {
             LlmSwitcher.switchTo(LlmType.GIGA_CHAT)
-            LlmSwitcher.getCurrentLlmService()
         } else {
             LlmSwitcher.switchTo(LlmType.LOCAL)
-            LlmSwitcher.getCurrentLlmService()
         }
-
-        
 
         val job = LlmJob(
             chatId = chatId,

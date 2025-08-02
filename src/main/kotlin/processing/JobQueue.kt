@@ -8,6 +8,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import org.example.services.LlmService
+import org.example.services.LlmSwitcher
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -21,7 +22,6 @@ data class LlmJob(
 )
 
 class JobQueue(
-    private val llmService: LlmService,
     maxParallelJobs: Int = 1
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -58,6 +58,7 @@ class JobQueue(
                     logger.info("Воркер получил семафор. Начинаю обработку задачи для чата {}.", job.chatId)
                     launch {
                         try {
+                            val llmService = LlmSwitcher.getCurrentLlmService()
                             val result = llmService.generateWithHistory(job.systemPrompt, job.history, job.newUserPrompt)
                             logger.info("Задача для чата {} успешно обработана. Результат: '{}'", job.chatId, result.take(100))
                             job.onResult(result)
