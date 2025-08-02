@@ -8,14 +8,19 @@ import com.github.kotlintelegrambot.entities.ChatId
 import com.github.kotlintelegrambot.entities.InlineKeyboardMarkup
 import com.github.kotlintelegrambot.network.fold
 import com.github.kotlintelegrambot.dispatcher.handlers.MessageHandlerEnvironment
+import com.github.kotlintelegrambot.entities.ParseMode
+import org.example.analysis.Complexity
+import org.example.analysis.ComplexityAnalyzer
 import org.example.calculation.CalculatorService
 import org.example.calculation.PriceListProvider
 import org.example.calculation.models.CalculationResult
 import org.example.processing.JobQueue
 import org.example.processing.LlmJob
 import org.example.state.CalculationData
+import org.example.state.RequestLimiter
 import org.example.state.SessionManager
 import org.example.state.UserMode
+import org.example.utils.OPERATOR_CHAT_ID
 import org.example.utils.TextProvider
 import org.slf4j.LoggerFactory
 import java.text.DecimalFormat
@@ -25,7 +30,8 @@ class ResponseHandler(
     private val textProvider: TextProvider,
     private val jobQueue: JobQueue,
     private val calculatorService: CalculatorService,
-    private val priceListProvider: PriceListProvider
+    private val priceListProvider: PriceListProvider,
+    private val complexityAnalyzer: ComplexityAnalyzer
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
     private val keyboardFactory = KeyboardFactory(textProvider, priceListProvider)
@@ -48,7 +54,7 @@ class ResponseHandler(
                 messageId = messageIdToEdit,
                 text = text,
                 replyMarkup = replyMarkup,
-                parseMode = com.github.kotlintelegrambot.entities.ParseMode.MARKDOWN
+                parseMode = ParseMode.MARKDOWN
             ).fold(
                 {
                     finalMessageId = messageIdToEdit
@@ -59,7 +65,7 @@ class ResponseHandler(
                         chatId = ChatId.fromId(chatId),
                         text = text,
                         replyMarkup = replyMarkup,
-                        parseMode = com.github.kotlintelegrambot.entities.ParseMode.MARKDOWN
+                        parseMode = ParseMode.MARKDOWN
                     ).fold(
                         { newMessage -> finalMessageId = newMessage.messageId },
                         { sendError -> logger.error("Не удалось отправить запасное сообщение: $sendError") }
@@ -71,7 +77,7 @@ class ResponseHandler(
                 chatId = ChatId.fromId(chatId),
                 text = text,
                 replyMarkup = replyMarkup,
-                parseMode = com.github.kotlintelegrambot.entities.ParseMode.MARKDOWN
+                parseMode = ParseMode.MARKDOWN
             ).fold(
                 { newMessage -> finalMessageId = newMessage.messageId },
                 { error -> logger.error("Не удалось отправить сообщение: $error") }
@@ -117,7 +123,7 @@ class ResponseHandler(
             UserMode.CALC_AWAITING_DIMENSIONS -> handleDimensionsSelected(env.bot, chatId, text)
             UserMode.CALC_AWAITING_AI_ESTIMATION -> {
                 sendOrEditMessage(env.bot, chatId, textProvider.get("llm.in_queue"), null, editPrevious = true)
-
+                LlmSwitcher.switchTo(LlmType.GIGA_CHAT)
                 val job = LlmJob(
                     chatId = chatId,
                     systemPrompt = textProvider.get("llm.system_prompt.estimator"),
@@ -141,11 +147,11 @@ class ResponseHandler(
             ${escapeMarkdownV1(text)}
         """.trimIndent()
 
-                if (org.example.utils.OPERATOR_CHAT_ID != 0L) {
+                if (OPERATOR_CHAT_ID != 0L) {
                     env.bot.sendMessage(
-                        chatId = ChatId.fromId(org.example.utils.OPERATOR_CHAT_ID),
+                        chatId = ChatId.fromId(OPERATOR_CHAT_ID),
                         text = messageForOperator,
-                        parseMode = com.github.kotlintelegrambot.entities.ParseMode.MARKDOWN
+                        parseMode = ParseMode.MARKDOWN
                     )
                 }
                 sendOrEditMessage(env.bot, chatId, textProvider.get("file.caption.received"), null, editPrevious = false)
@@ -261,9 +267,9 @@ class ResponseHandler(
             return
         }
 
-        if (org.example.utils.OPERATOR_CHAT_ID != 0L) {
+        if (OPERATOR_CHAT_ID != 0L) {
             env.bot.forwardMessage(
-                chatId = ChatId.fromId(org.example.utils.OPERATOR_CHAT_ID),
+                chatId = ChatId.fromId(OPERATOR_CHAT_ID),
                 fromChatId = ChatId.fromId(chatId),
                 messageId = env.message.messageId
             )
@@ -324,11 +330,11 @@ class ResponseHandler(
         ${escapeMarkdownV1(text)}
     """.trimIndent()
 
-        if (org.example.utils.OPERATOR_CHAT_ID != 0L) {
+        if (OPERATOR_CHAT_ID != 0L) {
             env.bot.sendMessage(
-                chatId = ChatId.fromId(org.example.utils.OPERATOR_CHAT_ID),
+                chatId = ChatId.fromId(OPERATOR_CHAT_ID),
                 text = messageForOperator,
-                parseMode = com.github.kotlintelegrambot.entities.ParseMode.MARKDOWN
+                parseMode = ParseMode.MARKDOWN
             )
             sendOrEditMessage(env.bot, chatId, textProvider.get("operator.query.received"), null, editPrevious = false)
         } else {
@@ -355,6 +361,37 @@ class ResponseHandler(
     private fun handleLlmChat(env: TextHandlerEnvironment, text: String) {
         val chatId = env.message.chat.id
         val session = sessionManager.getSession(chatId)
+
+        val complexity = complexityAnalyzer.analyze(text)
+
+        var useGigaChat: Boolean
+        var reason: String
+
+        if (complexity == Complexity.COMPLEX) {
+            if (RequestLimiter.allowComplexRequest(chatId)) {
+                useGigaChat = true
+                reason = " (сложный запрос)"
+            } else {
+                useGigaChat = false
+                reason = " (лимит сложных запросов исчерпан, используется локальная модель)"
+            }
+        } else {
+            useGigaChat = false
+            reason = " (простой запрос)"
+        }
+
+        logger.info("Решено использовать ${if (useGigaChat) "GigaChat" else "Local LLM"} для чата $chatId. Причина: $reason")
+
+        val llmServiceToUse = if (useGigaChat) {
+            LlmSwitcher.switchTo(LlmType.GIGA_CHAT)
+            LlmSwitcher.getCurrentLlmService()
+        } else {
+            LlmSwitcher.switchTo(LlmType.LOCAL)
+            LlmSwitcher.getCurrentLlmService()
+        }
+
+        
+
         val job = LlmJob(
             chatId = chatId,
             systemPrompt = textProvider.get("llm.system_prompt.chat"),
@@ -564,7 +601,7 @@ class ResponseHandler(
             val initialMessage = textProvider.get("calc.result.success", resultTextForLlm)
 
             sendOrEditMessage(bot, chatId, textProvider.get("llm.in_queue"), null, editPrevious = true)
-
+            LlmSwitcher.switchTo(LlmType.GIGA_CHAT)
             val job = LlmJob(
                 chatId = chatId,
                 systemPrompt = textProvider.get("llm.system_prompt.commentator"),

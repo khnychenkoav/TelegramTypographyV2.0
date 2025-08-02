@@ -1,5 +1,6 @@
 package org.example
 
+import org.example.analysis.ComplexityAnalyzer
 import org.example.bot.ResponseHandler
 import org.example.bot.TypographyBot
 import org.example.calculation.CalculatorService
@@ -20,11 +21,12 @@ fun main() {
     val translationService = TranslationService()
     val priceListProvider = PriceListProvider()
     val calculatorService = CalculatorService(priceListProvider, textProvider)
+    val complexityAnalyzer = ComplexityAnalyzer()
     val localLlmService = LlamaCliServiceImpl(llamaBinaryPath, modelPath, translationService)
     val llmService: LlmService = GigaChatServiceImpl()
     val jobQueue = JobQueue(llmService)
     val sessionManager = SessionManager()
-    val responseHandler = ResponseHandler(sessionManager, textProvider, jobQueue, calculatorService, priceListProvider)
+    val responseHandler = ResponseHandler(sessionManager, textProvider, jobQueue, calculatorService, priceListProvider, complexityAnalyzer)
     val typographyBot = TypographyBot(responseHandler)
     typographyBot.start()
     println("Бот запущен!")
