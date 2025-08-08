@@ -6,6 +6,7 @@ import org.example.bot.ResponseHandler
 import org.example.bot.TypographyBot
 import org.example.calculation.CalculatorService
 import org.example.calculation.PriceListProvider
+import org.example.processing.BroadcastService
 import org.example.processing.JobQueue
 import org.example.services.GigaChatServiceImpl
 import org.example.services.LlamaCliServiceImpl
@@ -13,6 +14,7 @@ import org.example.services.LlmService
 import org.example.services.LlmSwitcher
 import org.example.services.TranslationService
 import org.example.state.SessionManager
+import org.example.state.UserRepository
 import org.example.utils.TextProvider
 
 fun main() {
@@ -20,6 +22,8 @@ fun main() {
     val llamaBinaryPath = "/home/artem/llama.cpp/build/bin/llama-cli"
     val modelPath = "/home/artem/llm_models/YandexGPT-5-Lite-8B-instruct-Q4_K_M.gguf"
     val textProvider = TextProvider("messages_ru.properties")
+    val userRepository = UserRepository()
+    val broadcastService = BroadcastService(userRepository)
     CannedResponses
     val translationService = TranslationService()
     val priceListProvider = PriceListProvider()
@@ -30,7 +34,16 @@ fun main() {
     LlmSwitcher.initialize(local = localLlmService, giga = llmService)
     val jobQueue = JobQueue()
     val sessionManager = SessionManager()
-    val responseHandler = ResponseHandler(sessionManager, textProvider, jobQueue, calculatorService, priceListProvider, complexityAnalyzer)
+    val responseHandler = ResponseHandler(
+        sessionManager,
+        textProvider,
+        jobQueue,
+        calculatorService,
+        priceListProvider,
+        complexityAnalyzer,
+        userRepository,
+        broadcastService,
+        )
     val typographyBot = TypographyBot(responseHandler)
     typographyBot.start()
     println("Бот запущен!")

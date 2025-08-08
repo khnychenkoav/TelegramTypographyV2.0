@@ -12,14 +12,15 @@ import com.github.kotlintelegrambot.entities.ParseMode
 import com.github.kotlintelegrambot.dispatcher.document
 import com.github.kotlintelegrambot.dispatcher.message
 import com.github.kotlintelegrambot.extensions.filters.Filter
+import org.example.processing.BroadcastService
 import org.example.utils.BOT_TOKEN
 
-class TypographyBot(private val responseHandler: ResponseHandler) {
+class TypographyBot(
+    private val responseHandler: ResponseHandler,
+) {
 
-    private val bot: Bot
-
-    init {
-        bot = bot {
+    private val bot: Bot by lazy {
+        bot {
             token = BOT_TOKEN
             logLevel = LogLevel.Network.Body
 
@@ -27,25 +28,24 @@ class TypographyBot(private val responseHandler: ResponseHandler) {
                 command("start") {
                     responseHandler.onStartCommand(this)
                 }
-                text {
-                    if (message.text?.startsWith("/") != true) {
-                        responseHandler.onTextMessage(this)
-                    }
+                command("news_message") {
+                    responseHandler.onNewsMessageCommand(this)
+                }
+                command("cancel") {
+                    responseHandler.onCancelCommand(this)
                 }
                 callbackQuery {
                     responseHandler.onCallbackQuery(this)
                 }
-
-                val fileFilter = Filter.Custom {
-                    this.document != null || this.photo != null
-                }
-
-                message(fileFilter) {
-                    responseHandler.onFileReceived(this)
+                message(Filter.All) {
+                    if (message.text?.startsWith("/") != true) {
+                        responseHandler.handleAnyMessage(this)
+                    }
                 }
             }
         }
     }
+
 
     fun start() {
         bot.startPolling()

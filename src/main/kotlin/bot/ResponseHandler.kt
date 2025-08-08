@@ -16,6 +16,7 @@ import org.example.analysis.ComplexityAnalyzer
 import org.example.calculation.CalculatorService
 import org.example.calculation.PriceListProvider
 import org.example.calculation.models.CalculationResult
+import org.example.processing.BroadcastService
 import org.example.processing.JobQueue
 import org.example.processing.LlmJob
 import org.example.services.LlmSwitcher
@@ -24,8 +25,10 @@ import org.example.state.CalculationData
 import org.example.state.RequestLimiter
 import org.example.state.SessionManager
 import org.example.state.UserMode
+import org.example.state.UserRepository
 import org.example.utils.OPERATOR_CHAT_ID
 import org.example.utils.TextProvider
+import org.example.utils.sanitizeMarkdownV1
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.text.DecimalFormat
@@ -37,7 +40,9 @@ class ResponseHandler(
     private val jobQueue: JobQueue,
     private val calculatorService: CalculatorService,
     private val priceListProvider: PriceListProvider,
-    private val complexityAnalyzer: ComplexityAnalyzer
+    private val complexityAnalyzer: ComplexityAnalyzer,
+    private val userRepository: UserRepository,
+    private val broadcastService: BroadcastService,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
     private val keyboardFactory = KeyboardFactory(textProvider, priceListProvider)
@@ -106,6 +111,7 @@ class ResponseHandler(
 
     fun onStartCommand(env: CommandHandlerEnvironment) {
         val chatId = env.message.chat.id
+        userRepository.addUser(chatId)
         sessionManager.resetSession(chatId)
         val session = sessionManager.getSession(chatId)
         sessionManager.updateSession(chatId, session.copy(mode = UserMode.AWAITING_NAME))
@@ -113,6 +119,58 @@ class ResponseHandler(
             chatId = ChatId.fromId(chatId),
             text = textProvider.get("start.welcome")
         )
+    }
+
+    fun onNewsMessageCommand(env: CommandHandlerEnvironment) {
+        val chatId = env.message.chat.id
+        if (chatId != OPERATOR_CHAT_ID) {
+            logger.warn("Попытка вызова /news_message от не-оператора: {}", chatId)
+            env.bot.sendMessage(ChatId.fromId(chatId), "Эта команда доступна только администратору.")
+            return
+        }
+
+        val session = sessionManager.getSession(chatId)
+        sessionManager.updateSession(chatId, session.copy(mode = UserMode.AWAITING_NEWS_MESSAGE))
+        val updatedSession = sessionManager.getSession(chatId)
+        logger.info("Оператор {} переведен в режим {}. Проверка: {}", chatId, UserMode.AWAITING_NEWS_MESSAGE, updatedSession.mode)
+        env.bot.sendMessage(
+            chatId = ChatId.fromId(chatId),
+            text = "Готов принять сообщение для рассылки. Отправьте его следующим сообщением (текст, фото с подписью и т.д.).\n\nДля отмены введите /cancel"
+        )
+    }
+
+    fun onCancelCommand(env: CommandHandlerEnvironment) {
+        val chatId = env.message.chat.id
+        val session = sessionManager.getSession(chatId)
+        if (session.mode == UserMode.AWAITING_NEWS_MESSAGE) {
+            sessionManager.updateSession(chatId, session.copy(mode = UserMode.MAIN_MENU))
+            env.bot.sendMessage(ChatId.fromId(chatId), "Рассылка отменена.")
+        }
+    }
+
+    fun handleAnyMessage(env: MessageHandlerEnvironment) {
+        val chatId = env.message.chat.id
+        userRepository.addUser(chatId)
+
+        val session = sessionManager.getSession(chatId)
+
+        if (chatId == OPERATOR_CHAT_ID) {
+            logger.info("Сообщение от оператора. Текущий режим: {}", session.mode)
+        }
+
+        if (session.mode == UserMode.AWAITING_NEWS_MESSAGE && chatId == OPERATOR_CHAT_ID) {
+            logger.info("Поймано сообщение для рассылки от оператора {}.", chatId)
+            broadcastService.startBroadcast(env.message, env.bot)
+            sessionManager.updateSession(chatId, session.copy(mode = UserMode.MAIN_MENU))
+            logger.info("Оператор {} возвращен в режим {}", chatId, UserMode.MAIN_MENU)
+            return
+        }
+
+        if (env.message.text != null) {
+            onTextMessage(env.toTextHandlerEnvironment())
+        } else {
+            onFileReceived(env)
+        }
     }
 
     fun onTextMessage(env: TextHandlerEnvironment) {
@@ -140,7 +198,8 @@ class ResponseHandler(
                     history = emptyList(),
                     newUserPrompt = text,
                     onResult = { result ->
-                        sendOrEditMessage(env.bot, chatId, result, null, editPrevious = false)
+                        val sanitizedResult = sanitizeMarkdownV1(result)
+                        sendOrEditMessage(env.bot, chatId, sanitizedResult, null, editPrevious = false)
                         showMainMenu(env.bot, chatId, editPrevious = false)
                     }
                 )
@@ -295,6 +354,10 @@ class ResponseHandler(
         sendOrEditMessage(env.bot, chatId, textProvider.get("file.received"), null, editPrevious = false)
     }
 
+    private fun MessageHandlerEnvironment.toTextHandlerEnvironment(): TextHandlerEnvironment {
+        return TextHandlerEnvironment(bot, update, message, message.text!!)
+    }
+
     private fun handleNameInput(env: TextHandlerEnvironment, name: String) {
         val chatId = env.message.chat.id
         val session = sessionManager.getSession(chatId)
@@ -421,8 +484,9 @@ class ResponseHandler(
                 while (updatedHistory.size > 4) {
                     updatedHistory.removeFirst()
                 }
+                val sanitizedResult = sanitizeMarkdownV1(result)
                 sessionManager.updateSession(chatId, session.copy(conversationHistory = updatedHistory))
-                sendOrEditMessage(env.bot, chatId, result, replyMarkup = keyboardFactory.buildBackToMainMenuKeyboard(), editPrevious = false)
+                sendOrEditMessage(env.bot, chatId, sanitizedResult, replyMarkup = keyboardFactory.buildBackToMainMenuKeyboard(), editPrevious = false)
             }
         )
         if (jobQueue.submit(job)) {
@@ -650,7 +714,8 @@ class ResponseHandler(
                 history = emptyList(),
                 newUserPrompt = initialMessage,
                 onResult = { llmResponse ->
-                    sendOrEditMessage(bot, chatId, llmResponse, null, editPrevious = false)
+                    val sanitizedResult = sanitizeMarkdownV1(llmResponse)
+                    sendOrEditMessage(bot, chatId, sanitizedResult, null, editPrevious = false)
                     sessionManager.updateSession(chatId, session.copy(mode = UserMode.MAIN_MENU, currentCalculation = null))
                     showMainMenu(bot, chatId, editPrevious = false)
                 }

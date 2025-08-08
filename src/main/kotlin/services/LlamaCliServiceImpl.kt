@@ -79,7 +79,7 @@ class LlamaCliServiceImpl(
             } else if (perfIndex != -1) {
                 englishResponse = responsePart.substring(0, perfIndex)
             }
-            val cleanEnglishResponse = englishResponse.substringAfterLast("SEP ")
+            val cleanEnglishResponse = englishResponse.substringAfterLast("Ассистент:[SEP]")
 
             if (cleanEnglishResponse.isBlank()) {
                 logger.warn("Результат после парсинга пуст. Полный вывод:\n{}", output)

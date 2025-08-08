@@ -23,7 +23,9 @@ enum class UserMode {
 
     CALC_AWAITING_AI_ESTIMATION,
 
-    AWAITING_FILE_CAPTION
+    AWAITING_FILE_CAPTION,
+
+    AWAITING_NEWS_MESSAGE,
 }
 
 data class CalculationData(
