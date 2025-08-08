@@ -418,7 +418,7 @@ class ResponseHandler(
             onResult = { result ->
                 val updatedHistory = session.conversationHistory
                 updatedHistory.add(text to result)
-                while (updatedHistory.size > 5) {
+                while (updatedHistory.size > 4) {
                     updatedHistory.removeFirst()
                 }
                 sessionManager.updateSession(chatId, session.copy(conversationHistory = updatedHistory))

@@ -18,7 +18,7 @@ import org.example.utils.TextProvider
 fun main() {
     println("Инициализация компонентов...")
     val llamaBinaryPath = "/home/artem/llama.cpp/build/bin/llama-cli"
-    val modelPath = "/home/artem/llm_models/Phi-3-mini-4k-instruct-q4.gguf"
+    val modelPath = "/home/artem/llm_models/YandexGPT-5-Lite-8B-instruct-Q4_K_M.gguf"
     val textProvider = TextProvider("messages_ru.properties")
     CannedResponses
     val translationService = TranslationService()

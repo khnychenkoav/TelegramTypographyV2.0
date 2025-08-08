@@ -8,8 +8,8 @@ class LlamaCliServiceImpl(
     private val llamaBinaryPath: String,
     private val modelPath: String,
     private val translationService: TranslationService,
-    private val threads: Int = 4,
-    private val maxTokens: Int = 250
+    private val threads: Int = 8,
+    private val maxTokens: Int = 500
 ) : LlmService {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -20,13 +20,13 @@ class LlamaCliServiceImpl(
     ): String {
         logger.info("Вызов Llama.cpp с историей, системным промптом и переводом...")
 
-        val translatedSystemPrompt = translate(systemPrompt, "ru", "en")
-        val translatedNewUserPrompt = translate(newUserPrompt, "ru", "en")
-        val translatedHistory = history.map { (userMsg, assistantMsg) ->
-            translate(userMsg, "ru", "en") to translate(assistantMsg, "ru", "en")
-        }
+        //val translatedSystemPrompt = translate(systemPrompt, "ru", "en")
+        //val translatedNewUserPrompt = translate(newUserPrompt, "ru", "en")
+        //val translatedHistory = history.map { (userMsg, assistantMsg) ->
+        //    translate(userMsg, "ru", "en") to translate(assistantMsg, "ru", "en")
+        //}
 
-        val fullPrompt = buildPrompt(translatedSystemPrompt, translatedHistory, translatedNewUserPrompt)
+        val fullPrompt = buildPrompt(systemPrompt, history, newUserPrompt)
         logger.trace("Собранный английский промпт:\n{}", fullPrompt)
 
         val command = listOf(
@@ -34,7 +34,10 @@ class LlamaCliServiceImpl(
             "-m", modelPath,
             "-p", fullPrompt,
             "-n", maxTokens.toString(),
-            "-t", threads.toString()
+            "-t", threads.toString(),
+            "-c", "4096",
+            "--temp", "0.3",
+            "--repeat-penalty", "1.1"
         )
         logger.debug("Команда для запуска: {}", command)
 
@@ -76,7 +79,7 @@ class LlamaCliServiceImpl(
             } else if (perfIndex != -1) {
                 englishResponse = responsePart.substring(0, perfIndex)
             }
-            val cleanEnglishResponse = englishResponse.trim()
+            val cleanEnglishResponse = englishResponse.substringAfterLast("SEP ")
 
             if (cleanEnglishResponse.isBlank()) {
                 logger.warn("Результат после парсинга пуст. Полный вывод:\n{}", output)
@@ -84,10 +87,10 @@ class LlamaCliServiceImpl(
             }
             logger.info("Успешно получен английский ответ: '{}'", cleanEnglishResponse)
 
-            val russianResponse = translate(cleanEnglishResponse, "en", "ru")
-            logger.info("Финальный русский ответ: '{}'", russianResponse)
+            //val russianResponse = translate(cleanEnglishResponse, "en", "ru")
+            //logger.info("Финальный русский ответ: '{}'", russianResponse)
 
-            return russianResponse
+            return cleanEnglishResponse
 
         } catch (e: Exception) {
             logger.error("Критическая ошибка при вызове llama-cli", e)
