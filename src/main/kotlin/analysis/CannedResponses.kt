@@ -1,50 +1,86 @@
 package org.example.analysis
 
-import java.io.InputStream
+import kotlinx.serialization.json.Json
+import org.slf4j.LoggerFactory
 import java.util.*
 
 object CannedResponses {
-    private val responses: Map<String, Pair<List<String>, String>>
+    private val logger = LoggerFactory.getLogger(javaClass)
+
+    private data class ProcessedResponse(
+        val answer: String,
+        val threshold: Int,
+        val keywordStems: Map<String, Int>
+    )
+
+    private val processedResponses: List<ProcessedResponse>
 
     init {
-        val responseNames = listOf("address", "price")
+        logger.info("Инициализация готовых ответов (CannedResponses)...")
+        processedResponses = loadAndProcessResponses("canned_responses.json")
+        logger.info("Загружено и обработано {} готовых ответов.", processedResponses.size)
+    }
 
-        val loadedResponses = mutableMapOf<String, Pair<List<String>, String>>()
-        for (name in responseNames) {
-            try {
-                val keywords = loadResourceLines("canned/${name}_keywords.txt")
-                val answerText = loadResourceText("canned/${name}.txt")
-                if (keywords.isNotEmpty() && answerText.isNotBlank()) {
-                    loadedResponses[name] = Pair(keywords, answerText)
-                }
-            } catch (e: Exception) {
-                println("ПРЕДУПРЕЖДЕНИЕ: Не удалось загрузить готовый ответ '$name'. Ошибка: ${e.message}")
-            }
+    private fun loadAndProcessResponses(resourcePath: String): List<ProcessedResponse> {
+        val jsonContent = try {
+            this::class.java.classLoader.getResource(resourcePath)?.readText(Charsets.UTF_8)
+                ?: throw IllegalStateException("Ресурс не найден: $resourcePath")
+        } catch (e: Exception) {
+            logger.error("Не удалось прочитать файл готовых ответов: $resourcePath", e)
+            return emptyList()
         }
-        responses = loadedResponses
-        println("Загружено готовых ответов: ${responses.size}")
-    }
 
-    private fun loadResourceLines(path: String): List<String> {
-        return javaClass.classLoader.getResourceAsStream(path)?.bufferedReader()?.readLines() ?: emptyList()
-    }
+        val json = Json { ignoreUnknownKeys = true }
+        val configs = try {
+            json.decodeFromString<List<CannedResponseConfig>>(jsonContent)
+        } catch (e: Exception) {
+            logger.error("Не удалось распарсить JSON из файла: $resourcePath", e)
+            return emptyList()
+        }
 
-    private fun loadResourceText(path: String): String {
-        return javaClass.classLoader.getResourceAsStream(path)?.bufferedReader()?.readText() ?: ""
+        return configs.map { config ->
+            ProcessedResponse(
+                answer = config.answer,
+                threshold = config.threshold,
+                keywordStems = config.keywords.mapKeys { (key, _) ->
+                    RussianStemmer.stem(key.lowercase(Locale.getDefault()))
+                }
+            )
+        }
     }
 
     /**
-     * Ищет в тексте пользователя ключевые слова и возвращает готовый ответ.
+     * Находит наиболее подходящий готовый ответ на основе системы весов.
+     * @param text Входящее сообщение от пользователя.
+     * @return Текст готового ответа или null, если подходящего не найдено.
      */
     fun findResponse(text: String): String? {
-        val lowerCaseText = text.lowercase(Locale.getDefault())
+        val textStems = text.split(Regex("\\s+|[.,!?\"'()]"))
+            .mapNotNull { it.trim().lowercase(Locale.getDefault()).ifBlank { null } }
+            .map { RussianStemmer.stem(it) }
+            .toSet()
 
-        for ((_, data) in responses) {
-            val (keywords, answer) = data
-            if (keywords.any { lowerCaseText.contains(it) }) {
-                return answer
+        if (textStems.isEmpty()) {
+            return null
+        }
+
+        var bestMatch: ProcessedResponse? = null
+        var maxScore = 0
+
+        for (response in processedResponses) {
+            val currentScore = textStems
+                .sumOf { stem -> response.keywordStems[stem] ?: 0 }
+
+            if (currentScore >= response.threshold && currentScore > maxScore) {
+                maxScore = currentScore
+                bestMatch = response
             }
         }
-        return null
+
+        if (bestMatch != null) {
+            logger.debug("Найдено совпадение для готового ответа со счетом {}. Текст: '{}'", maxScore, text)
+        }
+
+        return bestMatch?.answer
     }
 }
