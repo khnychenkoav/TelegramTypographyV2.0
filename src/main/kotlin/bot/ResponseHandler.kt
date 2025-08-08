@@ -157,13 +157,37 @@ class ResponseHandler(
     }
 
     fun handleAnyMessage(env: MessageHandlerEnvironment) {
+        val message = env.message
         val chatId = env.message.chat.id
         userRepository.addUser(chatId)
+        val bot = env.bot
 
         val session = sessionManager.getSession(chatId)
 
         if (chatId == OPERATOR_CHAT_ID) {
             logger.info("Сообщение от оператора. Текущий режим: {}", session.mode)
+            val repliedToMessage = message.replyToMessage
+            if (repliedToMessage != null) {
+                val originalMessageText = repliedToMessage.text ?: repliedToMessage.caption ?: ""
+                val userId = parseUserIdFromMessage(originalMessageText)
+
+                if (userId != null) {
+                    val operatorText = message.text
+                    if (operatorText != null) {
+                        bot.sendMessage(
+                            chatId = ChatId.fromId(userId),
+                            text = "👨‍💼 *Ответ от оператора:*\n\n$operatorText",
+                            parseMode = ParseMode.MARKDOWN
+                        )
+                        bot.sendMessage(
+                            chatId = ChatId.fromId(chatId),
+                            text = "✅ Ваше сообщение доставлено пользователю.",
+                            replyToMessageId = message.messageId
+                        )
+                    }
+                    return
+                }
+            }
         }
 
         if (session.mode == UserMode.AWAITING_NEWS_MESSAGE && chatId == OPERATOR_CHAT_ID) {
@@ -225,9 +249,11 @@ class ResponseHandler(
         """.trimIndent()
 
                 if (OPERATOR_CHAT_ID != 0L) {
+                    val footer = "\n\n—\n👤 UserID::${user.id}::"
+                    val finalMessage = messageForOperator + footer
                     env.bot.sendMessage(
                         chatId = ChatId.fromId(OPERATOR_CHAT_ID),
-                        text = messageForOperator,
+                        text = finalMessage,
                         parseMode = ParseMode.MARKDOWN
                     )
                 }
@@ -366,6 +392,12 @@ class ResponseHandler(
         sendOrEditMessage(env.bot, chatId, textProvider.get("file.received"), null, editPrevious = false)
     }
 
+    private fun parseUserIdFromMessage(text: String): Long? {
+        val regex = """👤 UserID::(\d+)::""".toRegex()
+        val matchResult = regex.find(text)
+        return matchResult?.groups?.get(1)?.value?.toLongOrNull()
+    }
+
     private fun MessageHandlerEnvironment.toTextHandlerEnvironment(): TextHandlerEnvironment {
         return TextHandlerEnvironment(bot, update, message, message.text!!)
     }
@@ -409,6 +441,7 @@ class ResponseHandler(
         val user = env.message.from ?: return
         val userName = user.firstName + (user.lastName?.let { " $it" } ?: "")
         val userMention = "[${userName}](tg://user?id=${user.id})"
+        val footer = "\n\n—\n👤 UserID::${user.id}::"
 
         val messageForOperator = """
         ❗️*Новый вопрос оператору*❗️
@@ -418,6 +451,7 @@ class ResponseHandler(
         
         *Сообщение:*
         ${escapeMarkdownV1(text)}
+        $footer
     """.trimIndent()
 
         if (OPERATOR_CHAT_ID != 0L) {
@@ -925,7 +959,9 @@ class ResponseHandler(
             calcData.printingLayers?.let { builder.append("*Слои печати:* $it\n") }
         }
 
+        val footer = "\n\n—\n👤 UserID::$userId::"
         builder.append("\n*Пожалуйста, свяжитесь с клиентом для подтверждения заказа.*")
+        builder.append(footer)
 
         return builder.toString()
     }
