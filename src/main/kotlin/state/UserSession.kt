@@ -67,6 +67,7 @@ data class CalculationData(
 
 
 data class UserSession(
+    val userId: Long = 0,
     val mode: UserMode = UserMode.AWAITING_NAME,
     val name: String? = null,
     val conversationHistory: MutableList<Pair<String, String>> = mutableListOf(),

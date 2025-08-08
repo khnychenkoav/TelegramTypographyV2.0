@@ -26,6 +26,7 @@ import org.example.state.RequestLimiter
 import org.example.state.SessionManager
 import org.example.state.UserMode
 import org.example.state.UserRepository
+import org.example.state.UserSession
 import org.example.utils.OPERATOR_CHAT_ID
 import org.example.utils.TextProvider
 import org.example.utils.sanitizeMarkdownV1
@@ -110,11 +111,18 @@ class ResponseHandler(
     }
 
     fun onStartCommand(env: CommandHandlerEnvironment) {
-        val chatId = env.message.chat.id
+        val message = env.message
+        val chatId = message.chat.id
+        val user = message.from
+
+        if (user == null) {
+            logger.warn("Не удалось получить информацию о пользователе в /start для чата {}", chatId)
+            return
+        }
+
         userRepository.addUser(chatId)
-        sessionManager.resetSession(chatId)
-        val session = sessionManager.getSession(chatId)
-        sessionManager.updateSession(chatId, session.copy(mode = UserMode.AWAITING_NAME))
+        sessionManager.updateSession(chatId, UserSession(userId = user.id, mode = UserMode.AWAITING_NAME))
+
         env.bot.sendMessage(
             chatId = ChatId.fromId(chatId),
             text = textProvider.get("start.welcome")
@@ -857,7 +865,8 @@ class ResponseHandler(
 
     private fun handleSubmitOrder(bot: Bot, chatId: Long) {
         val session = sessionManager.getSession(chatId)
-        val user = session.name ?: "Пользователь"
+        val userName = session.name ?: "Пользователь"
+        val userId = session.userId
         val calcData = session.currentCalculation
 
         if (calcData == null) {
@@ -866,7 +875,7 @@ class ResponseHandler(
             return
         }
 
-        val orderDetails = formatOrderForOperator(calcData, user, chatId)
+        val orderDetails = formatOrderForOperator(calcData, userName, userId)
 
         if (OPERATOR_CHAT_ID != 0L) {
             bot.sendMessage(
@@ -885,8 +894,9 @@ class ResponseHandler(
 
     private fun formatOrderForOperator(calcData: CalculationData, userName: String, userId: Long): String {
         val builder = StringBuilder()
+        val userMention = "[${escapeMarkdownV1(userName)}](tg://user?id=$userId)"
         builder.append("📝 *Новая заявка из Telegram-бота* 📝\n\n")
-        builder.append("*От:* $userName (ID: `$userId`)\n")
+        builder.append("*От:* $userMention (ID: `$userId`)\n")
         builder.append("------------------------------\n")
 
         calcData.productType?.let { builder.append("*Продукт:* ${textProvider.get("product.name.$it", it)}\n") }
