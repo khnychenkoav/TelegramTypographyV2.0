@@ -9,7 +9,7 @@ interface LlmService {
      * @param newUserPrompt Новый, текущий запрос пользователя.
      * @return Сгенерированный ответ.
      */
-    fun generateWithHistory(
+    suspend fun generateWithHistory(
         systemPrompt: String,
         history: List<Pair<String, String>>,
         newUserPrompt: String

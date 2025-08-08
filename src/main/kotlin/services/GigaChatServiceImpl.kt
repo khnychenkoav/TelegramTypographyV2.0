@@ -11,12 +11,16 @@ import dev.langchain4j.data.message.ChatMessage
 import dev.langchain4j.data.message.SystemMessage
 import dev.langchain4j.data.message.UserMessage
 import dev.langchain4j.model.chat.request.ChatRequest
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
 import org.example.utils.GIGACHAT_API_KEY
 import org.slf4j.LoggerFactory
 import java.net.URL
 import java.security.KeyStore
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
+import java.time.Duration
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
@@ -54,6 +58,7 @@ class GigaChatServiceImpl : LlmService {
 
         model = GigaChatChatModel.builder()
             .authClient(authClient)
+            .readTimeout(120)
             .defaultChatRequestParameters(
                 GigaChatChatRequestParameters.builder()
                     .modelName(ModelName.GIGA_CHAT)
@@ -92,36 +97,38 @@ class GigaChatServiceImpl : LlmService {
         }
     }
 
-    override fun generateWithHistory(
+    override suspend fun generateWithHistory(
         systemPrompt: String,
         history: List<Pair<String, String>>,
         newUserPrompt: String
     ): String {
-        try {
-            val messages = mutableListOf<ChatMessage>()
-            messages.add(SystemMessage.from(systemPrompt))
-            history.forEach { (userMsg, assistantMsg) ->
-                messages.add(UserMessage.from(userMsg))
-                messages.add(AiMessage.from(assistantMsg))
+        return withContext(Dispatchers.IO) {
+            try {
+                val messages = mutableListOf<ChatMessage>()
+                messages.add(SystemMessage.from(systemPrompt))
+                history.forEach { (userMsg, assistantMsg) ->
+                    messages.add(UserMessage.from(userMsg))
+                    messages.add(AiMessage.from(assistantMsg))
+                }
+                messages.add(UserMessage.from(newUserPrompt))
+
+                val gigaParams = GigaChatChatRequestParameters.builder()
+                    .modelName(model.defaultRequestParameters().modelName())
+                    .maxOutputTokens(1024)
+                    .build()
+
+                val chatRequest = ChatRequest.builder()
+                    .messages(messages)
+                    .parameters(gigaParams)
+                    .build()
+
+                val response = model.doChat(chatRequest)
+                response.aiMessage().text()
+
+            } catch (e: Exception) {
+                logger.error("Ошибка при работе с GigaChat API", e)
+                "Произошла ошибка при обращении к AI-модели GigaChat. Пожалуйста, попробуйте позже."
             }
-            messages.add(UserMessage.from(newUserPrompt))
-
-            val gigaParams = GigaChatChatRequestParameters.builder()
-                .modelName(model.defaultRequestParameters().modelName())
-                .maxOutputTokens(1024)
-                .build()
-
-            val chatRequest = ChatRequest.builder()
-                .messages(messages)
-                .parameters(gigaParams)
-                .build()
-
-            val response = model.doChat(chatRequest)
-            return response.aiMessage().text()
-
-        } catch (e: Exception) {
-            logger.error("Ошибка при работе с GigaChat API", e)
-            return "Произошла ошибка при обращении к AI-модели: ${e.message}"
         }
     }
 }

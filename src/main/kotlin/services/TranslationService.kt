@@ -3,6 +3,7 @@ package org.example.services
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.forms.*
 import io.ktor.http.*
@@ -18,6 +19,11 @@ class TranslationService {
             json(Json {
                 ignoreUnknownKeys = true
             })
+        }
+        install(HttpTimeout) {
+            requestTimeoutMillis = 50000 // 50 секунд на весь запрос
+            connectTimeoutMillis = 10000 // 20 секунд на установку соединения
+            socketTimeoutMillis = 30000 // 30 секунд на получение данных
         }
     }
 
