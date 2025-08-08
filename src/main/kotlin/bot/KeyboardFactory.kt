@@ -39,6 +39,8 @@ class KeyboardFactory(
         const val INFO_CALLBACK = "info"
         const val INFO_ADDRESSES_CALLBACK = "info_addresses"
         const val INFO_FILE_REQ_CALLBACK = "info_file_req"
+
+        const val SUBMIT_ORDER_CALLBACK = "submit_order"
     }
 
 
@@ -244,6 +246,23 @@ class KeyboardFactory(
                 InlineKeyboardButton.CallbackData(
                     text = textProvider.get("button.info.file_requirements"),
                     callbackData = INFO_FILE_REQ_CALLBACK
+                )
+            ),
+            listOf(
+                InlineKeyboardButton.CallbackData(
+                    text = textProvider.get("button.back_to_main_menu"),
+                    callbackData = BACK_TO_MAIN_MENU_CALLBACK
+                )
+            )
+        )
+    }
+
+    fun buildPostCalculationMenu(): InlineKeyboardMarkup {
+        return InlineKeyboardMarkup.create(
+            listOf(
+                InlineKeyboardButton.CallbackData(
+                    text = "✅ Оформить заявку",
+                    callbackData = SUBMIT_ORDER_CALLBACK
                 )
             ),
             listOf(

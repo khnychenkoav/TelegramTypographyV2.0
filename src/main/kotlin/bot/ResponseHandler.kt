@@ -323,12 +323,16 @@ class ResponseHandler(
                 val materialKey = callbackData.removePrefix(KeyboardFactory.CALC_MATERIAL_PREFIX)
                 handleMaterialSelected(env.bot, chatId, materialKey)
             }
+            callbackData == KeyboardFactory.SUBMIT_ORDER_CALLBACK -> {
+                handleSubmitOrder(env.bot, chatId)
+            }
             callbackData.startsWith(KeyboardFactory.CALC_PRINT_LAYERS_PREFIX) -> {
                 val layers = callbackData.removePrefix(KeyboardFactory.CALC_PRINT_LAYERS_PREFIX).toIntOrNull()
                 if (layers != null) {
                     handlePrintLayersSelected(env.bot, chatId, layers)
                 }
             }
+
         }
     }
 
@@ -699,7 +703,7 @@ class ResponseHandler(
 
         if (hasErrors || result.finalTotalPrice == 0.0) {
             val resultText = formatCalculationResult(result)
-            sendOrEditMessage(bot, chatId, textProvider.get("calc.result.success", resultText), null, editPrevious = false)
+            sendOrEditMessage(bot, chatId, textProvider.get("calc.result.success", resultText), keyboardFactory.buildBackToMainMenuKeyboard(), editPrevious = false)
             sessionManager.updateSession(chatId, session.copy(mode = UserMode.MAIN_MENU, currentCalculation = null))
             showMainMenu(bot, chatId, editPrevious = false)
         } else {
@@ -715,9 +719,7 @@ class ResponseHandler(
                 newUserPrompt = initialMessage,
                 onResult = { llmResponse ->
                     val sanitizedResult = sanitizeMarkdownV1(llmResponse)
-                    sendOrEditMessage(bot, chatId, sanitizedResult, null, editPrevious = false)
-                    sessionManager.updateSession(chatId, session.copy(mode = UserMode.MAIN_MENU, currentCalculation = null))
-                    showMainMenu(bot, chatId, editPrevious = false)
+                    sendOrEditMessage(bot, chatId, sanitizedResult, keyboardFactory.buildPostCalculationMenu(), editPrevious = false)
                 }
             )
             jobQueue.submit(job)
@@ -851,5 +853,70 @@ class ResponseHandler(
             session.lastBotMessageId = it
             sessionManager.updateSession(chatId, session)
         }
+    }
+
+    private fun handleSubmitOrder(bot: Bot, chatId: Long) {
+        val session = sessionManager.getSession(chatId)
+        val user = session.name ?: "Пользователь"
+        val calcData = session.currentCalculation
+
+        if (calcData == null) {
+            logger.error("Попытка оформить заявку без данных расчета для чата {}", chatId)
+            sendOrEditMessage(bot, chatId, "Произошла ошибка: данные для заявки не найдены. Пожалуйста, рассчитайте заказ заново.", keyboardFactory.buildBackToMainMenuKeyboard())
+            return
+        }
+
+        val orderDetails = formatOrderForOperator(calcData, user, chatId)
+
+        if (OPERATOR_CHAT_ID != 0L) {
+            bot.sendMessage(
+                chatId = ChatId.fromId(OPERATOR_CHAT_ID),
+                text = orderDetails,
+                parseMode = ParseMode.MARKDOWN
+            )
+        } else {
+            logger.warn("OPERATOR_CHAT_ID не настроен. Заявка не отправлена.")
+        }
+
+        sendOrEditMessage(bot, chatId, textProvider.get("order.submitted"), keyboardFactory.buildMainMenu())
+
+        sessionManager.updateSession(chatId, session.copy(mode = UserMode.MAIN_MENU, currentCalculation = null))
+    }
+
+    private fun formatOrderForOperator(calcData: CalculationData, userName: String, userId: Long): String {
+        val builder = StringBuilder()
+        builder.append("📝 *Новая заявка из Telegram-бота* 📝\n\n")
+        builder.append("*От:* $userName (ID: `$userId`)\n")
+        builder.append("------------------------------\n")
+
+        calcData.productType?.let { builder.append("*Продукт:* ${textProvider.get("product.name.$it", it)}\n") }
+        calcData.quantity?.let { builder.append("*Количество:* $it шт.\n") }
+
+        if (calcData.productType == "badge") {
+            calcData.shape?.let { builder.append("*Форма:* $it\n") }
+            calcData.size?.let { builder.append("*Размер:* $it\n") }
+        }
+
+        if (calcData.productType == "digital_printing") {
+            calcData.material?.let { builder.append("*Бумага:* $it\n") }
+            calcData.printingSides?.let { builder.append("*Стороны печати:* $it\n") }
+        }
+
+        if (calcData.productType in listOf("cutting", "cutting_and_printing")) {
+            calcData.originalMaterialKey?.let { builder.append("*Материал:* ${textProvider.get("material.$it", it)}\n") }
+            if (calcData.diameterCm != null) {
+                builder.append("*Диаметр:* ${calcData.diameterCm} см\n")
+            } else if (calcData.widthCm != null && calcData.heightCm != null) {
+                builder.append("*Размеры (ШхВ):* ${calcData.widthCm} x ${calcData.heightCm} см\n")
+            }
+        }
+
+        if (calcData.productType == "cutting_and_printing") {
+            calcData.printingLayers?.let { builder.append("*Слои печати:* $it\n") }
+        }
+
+        builder.append("\n*Пожалуйста, свяжитесь с клиентом для подтверждения заказа.*")
+
+        return builder.toString()
     }
 }
