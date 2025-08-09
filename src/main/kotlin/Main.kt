@@ -32,7 +32,7 @@ fun main() {
     val localLlmService = LlamaCliServiceImpl(llamaBinaryPath, modelPath, translationService)
     val llmService: LlmService = GigaChatServiceImpl()
     LlmSwitcher.initialize(local = localLlmService, giga = llmService)
-    val jobQueue = JobQueue()
+    val jobQueue = JobQueue(textProvider)
     val sessionManager = SessionManager()
     val responseHandler = ResponseHandler(
         sessionManager,

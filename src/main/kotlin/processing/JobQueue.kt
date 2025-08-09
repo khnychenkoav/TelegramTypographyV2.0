@@ -9,6 +9,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import org.example.services.LlmService
 import org.example.services.LlmSwitcher
+import org.example.utils.TextProvider
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -22,7 +23,8 @@ data class LlmJob(
 )
 
 class JobQueue(
-    maxParallelJobs: Int = 1
+    private val textProvider: TextProvider,
+    maxParallelJobs: Int = 1,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -59,9 +61,11 @@ class JobQueue(
                     launch {
                         try {
                             val llmService = LlmSwitcher.getCurrentLlmService()
-                            val result = llmService.generateWithHistory(job.systemPrompt, job.history, job.newUserPrompt)
-                            logger.info("Задача для чата {} успешно обработана. Результат: '{}'", job.chatId, result.take(100))
-                            job.onResult(result)
+                            val rawResult = llmService.generateWithHistory(job.systemPrompt, job.history, job.newUserPrompt)
+                            logger.info("Задача для чата {} успешно обработана. Результат: '{}'", job.chatId, rawResult.take(100))
+                            val disclaimer = textProvider.get("llm.disclaimer")
+                            val finalResult = rawResult + disclaimer
+                            job.onResult(finalResult)
                         } catch (e: Exception) {
                             logger.error("Ошибка при обработке задачи для чата ${job.chatId}", e)
                             job.onResult("К сожалению, произошла внутренняя ошибка. Попробуйте позже.")
