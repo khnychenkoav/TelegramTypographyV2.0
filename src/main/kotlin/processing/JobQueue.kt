@@ -19,7 +19,7 @@ data class LlmJob(
     val systemPrompt: String,
     val history: List<Pair<String, String>>,
     val newUserPrompt: String,
-    val onResult: (String) -> Unit
+    val onResult: (rawResult: String, resultForUser: String) -> Unit
 )
 
 class JobQueue(
@@ -64,11 +64,14 @@ class JobQueue(
                             val rawResult = llmService.generateWithHistory(job.systemPrompt, job.history, job.newUserPrompt)
                             logger.info("Задача для чата {} успешно обработана. Результат: '{}'", job.chatId, rawResult.take(100))
                             val disclaimer = textProvider.get("llm.disclaimer")
-                            val finalResult = rawResult + disclaimer
-                            job.onResult(finalResult)
+                            val resultForUser = rawResult + disclaimer
+                            job.onResult(rawResult, resultForUser)
                         } catch (e: Exception) {
                             logger.error("Ошибка при обработке задачи для чата ${job.chatId}", e)
-                            job.onResult("К сожалению, произошла внутренняя ошибка. Попробуйте позже.")
+                            job.onResult(
+                                "Внутренняя ошибка: ${e.message}",
+                                "К сожалению, произошла внутренняя ошибка. Попробуйте позже."
+                            )
                         }
                     }
                 }

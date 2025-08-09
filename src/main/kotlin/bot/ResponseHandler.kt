@@ -11,7 +11,6 @@ import com.github.kotlintelegrambot.dispatcher.handlers.MessageHandlerEnvironmen
 import com.github.kotlintelegrambot.entities.ParseMode
 import com.github.kotlintelegrambot.entities.TelegramFile
 import org.example.analysis.CannedResponses
-import org.example.analysis.Complexity
 import org.example.analysis.ComplexityAnalyzer
 import org.example.calculation.CalculatorService
 import org.example.calculation.PriceListProvider
@@ -47,6 +46,12 @@ class ResponseHandler(
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
     private val keyboardFactory = KeyboardFactory(textProvider, priceListProvider)
+
+    private companion object {
+        const val MAX_WORDS_FOR_CANNED = 5
+        const val MIN_WORDS_FOR_GIGA_CHAT = 7
+        const val GIGA_CHAT_COMPLEXITY_THRESHOLD = 8
+    }
 
     private fun sendOrEditMessage(
         bot: Bot,
@@ -210,11 +215,19 @@ class ResponseHandler(
         val text = env.message.text.orEmpty()
         val session = sessionManager.getSession(chatId)
         sessionManager.updateSession(chatId, session.copy(lastUserTextMessage = text))
-        val cannedResponse = CannedResponses.findResponse(text)
-        if (cannedResponse != null) {
-            sendOrEditMessage(env.bot, chatId, cannedResponse, keyboardFactory.buildAfterCannedResponseMenu(), editPrevious = false)
-            return
+
+        val wordCount = text.split(Regex("\\s+")).count()
+
+        if (wordCount <= MAX_WORDS_FOR_CANNED) {
+            val cannedResponse = CannedResponses.findResponse(text)
+            if (cannedResponse != null) {
+                sendOrEditMessage(env.bot, chatId, cannedResponse, keyboardFactory.buildAfterCannedResponseMenu(), editPrevious = false)
+                return
+            }
+        } else {
+            logger.debug("Запрос слишком длинный ({} слов) для CannedResponses, пропускаем.", wordCount)
         }
+
         when (session.mode) {
             UserMode.AWAITING_NAME -> handleNameInput(env, text)
             UserMode.MAIN_MENU -> showMainMenu(env.bot, chatId)
@@ -230,8 +243,8 @@ class ResponseHandler(
                     systemPrompt = textProvider.get("llm.system_prompt.estimator"),
                     history = emptyList(),
                     newUserPrompt = text,
-                    onResult = { result ->
-                        val sanitizedResult = sanitizeMarkdownV1(result)
+                    onResult = { rawResult, resultForUser ->
+                        val sanitizedResult = sanitizeMarkdownV1(resultForUser)
                         sendOrEditMessage(env.bot, chatId, sanitizedResult, null, editPrevious = false)
                         showMainMenu(env.bot, chatId, editPrevious = false)
                     }
@@ -497,25 +510,34 @@ class ResponseHandler(
         val chatId = env.message.chat.id
         val session = sessionManager.getSession(chatId)
 
-        val complexity = complexityAnalyzer.analyze(text)
+        val wordCount = text.split(Regex("\\s+")).count()
+        val complexityScore = complexityAnalyzer.analyze(text)
 
-        var useGigaChat: Boolean
+        var useGigaChat = false
         var reason: String
 
-        if (complexity == Complexity.COMPLEX) {
+        if (wordCount >= MIN_WORDS_FOR_GIGA_CHAT) {
+            reason = " (длинный запрос, {} слов >= {})".format(wordCount, MIN_WORDS_FOR_GIGA_CHAT)
             if (RequestLimiter.allowComplexRequest(chatId)) {
                 useGigaChat = true
-                reason = " (сложный запрос)"
             } else {
-                useGigaChat = false
-                reason = " (лимит сложных запросов исчерпан, используется локальная модель)"
+                reason += " (лимит GigaChat исчерпан)"
+            }
+        }
+
+        else if (complexityScore >= GIGA_CHAT_COMPLEXITY_THRESHOLD) {
+            reason = " (сложные ключевые слова, счет: {} >= {})".format(complexityScore, GIGA_CHAT_COMPLEXITY_THRESHOLD)
+            if (RequestLimiter.allowComplexRequest(chatId)) {
+                useGigaChat = true
+            } else {
+                reason += " (лимит GigaChat исчерпан)"
             }
         } else {
             useGigaChat = false
-            reason = " (простой запрос)"
+            reason = " (простой запрос, слов: {}, счет: {})".format(wordCount, complexityScore)
         }
 
-        logger.info("Решено использовать ${if (useGigaChat) "GigaChat" else "Local LLM"} для чата $chatId. Причина: $reason")
+        logger.info("Решено использовать {}. Причина:{}", if (useGigaChat) "GigaChat" else "Local LLM", reason)
 
         if (useGigaChat) {
             LlmSwitcher.switchTo(LlmType.GIGA_CHAT)
@@ -528,13 +550,13 @@ class ResponseHandler(
             systemPrompt = textProvider.get("llm.system_prompt.chat"),
             history = session.conversationHistory.toList(),
             newUserPrompt = text,
-            onResult = { result ->
+            onResult = { rawResult, resultForUser ->
                 val updatedHistory = session.conversationHistory
-                updatedHistory.add(text to result)
+                updatedHistory.add(text to rawResult)
                 while (updatedHistory.size > 4) {
                     updatedHistory.removeFirst()
                 }
-                val sanitizedResult = sanitizeMarkdownV1(result)
+                val sanitizedResult = sanitizeMarkdownV1(resultForUser)
                 sessionManager.updateSession(chatId, session.copy(conversationHistory = updatedHistory))
                 sendOrEditMessage(env.bot, chatId, sanitizedResult, replyMarkup = keyboardFactory.buildBackToMainMenuKeyboard(), editPrevious = false)
             }
@@ -763,8 +785,8 @@ class ResponseHandler(
                 systemPrompt = textProvider.get("llm.system_prompt.commentator"),
                 history = emptyList(),
                 newUserPrompt = initialMessage,
-                onResult = { llmResponse ->
-                    val sanitizedResult = sanitizeMarkdownV1(llmResponse)
+                onResult = { rawResult, resultForUser ->
+                    val sanitizedResult = sanitizeMarkdownV1(resultForUser)
                     sendOrEditMessage(bot, chatId, sanitizedResult, keyboardFactory.buildPostCalculationMenu(), editPrevious = false)
                 }
             )
@@ -996,14 +1018,32 @@ class ResponseHandler(
 
         sendOrEditMessage(bot, chatId, textProvider.get("llm.in_queue"), null, editPrevious = false)
 
-        val complexity = complexityAnalyzer.analyze(lastQuestion)
-        val useGigaChat = if (complexity == Complexity.COMPLEX) {
-            RequestLimiter.allowComplexRequest(chatId)
+        val wordCount = lastQuestion.split(Regex("\\s+")).count()
+        val complexityScore = complexityAnalyzer.analyze(lastQuestion)
+
+        var useGigaChat = false
+        var reason: String
+
+        if (wordCount >= MIN_WORDS_FOR_GIGA_CHAT) {
+            reason = " (эскалация, длинный запрос, {} слов >= {})".format(wordCount, MIN_WORDS_FOR_GIGA_CHAT)
+            if (RequestLimiter.allowComplexRequest(chatId)) {
+                useGigaChat = true
+            } else {
+                reason += " (лимит GigaChat исчерпан)"
+            }
+        } else if (complexityScore >= GIGA_CHAT_COMPLEXITY_THRESHOLD) {
+            reason = " (эскалация, сложные ключевые слова, счет: {} >= {})".format(complexityScore, GIGA_CHAT_COMPLEXITY_THRESHOLD)
+            if (RequestLimiter.allowComplexRequest(chatId)) {
+                useGigaChat = true
+            } else {
+                reason += " (лимит GigaChat исчерпан)"
+            }
         } else {
-            false
+            useGigaChat = false
+            reason = " (эскалация, простой запрос, слов: {}, счет: {})".format(wordCount, complexityScore)
         }
 
-        logger.info("Эскалация к LLM. Решено использовать {}. Вопрос: '{}'", if (useGigaChat) "GigaChat" else "Local LLM", lastQuestion)
+        logger.info("Эскалация к LLM. Решено использовать {}. Причина:{}", if (useGigaChat) "GigaChat" else "Local LLM", reason)
 
         if (useGigaChat) {
             LlmSwitcher.switchTo(LlmType.GIGA_CHAT)
@@ -1016,14 +1056,14 @@ class ResponseHandler(
             systemPrompt = textProvider.get("llm.system_prompt.chat"),
             history = session.conversationHistory.toList(),
             newUserPrompt = lastQuestion,
-            onResult = { result ->
+            onResult = { rawResult, resultForUser ->
                 val updatedHistory = session.conversationHistory
-                updatedHistory.add(lastQuestion to result)
+                updatedHistory.add(lastQuestion to rawResult)
                 while (updatedHistory.size > 4) {
                     updatedHistory.removeFirst()
                 }
 
-                val sanitizedResult = sanitizeMarkdownV1(result)
+                val sanitizedResult = sanitizeMarkdownV1(resultForUser)
                 sessionManager.updateSession(chatId, session.copy(conversationHistory = updatedHistory, mode = UserMode.LLM_CHAT))
                 sendOrEditMessage(bot, chatId, sanitizedResult, keyboardFactory.buildBackToMainMenuKeyboard(), editPrevious = true)
             }
