@@ -1,11 +1,14 @@
 package org.example.services
 
+import chat.giga.client.GigaChatClient
 import chat.giga.client.auth.AuthClient
 import chat.giga.client.auth.AuthClientBuilder
 import chat.giga.langchain4j.GigaChatChatModel
 import chat.giga.langchain4j.GigaChatChatRequestParameters
+import chat.giga.langchain4j.GigaChatImageModel
 import chat.giga.model.ModelName
 import chat.giga.model.Scope
+import chat.giga.model.completion.ChatFunctionCallEnum
 import dev.langchain4j.data.message.AiMessage
 import dev.langchain4j.data.message.ChatMessage
 import dev.langchain4j.data.message.SystemMessage
@@ -21,6 +24,7 @@ import java.security.KeyStore
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.time.Duration
+import java.util.Base64
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
@@ -32,7 +36,8 @@ private const val CERT_URL = "https://gu-st.ru/content/Other/doc/russian_trusted
 class GigaChatServiceImpl : LlmService {
 
     private val logger = LoggerFactory.getLogger(javaClass)
-    private val model: GigaChatChatModel
+    private val chatModel: GigaChatChatModel
+    private val gigaChatClient: GigaChatClient
 
     init {
         logger.info("Инициализация GigaChatServiceImpl...")
@@ -56,7 +61,7 @@ class GigaChatServiceImpl : LlmService {
             )
             .build()
 
-        model = GigaChatChatModel.builder()
+        chatModel = GigaChatChatModel.builder()
             .authClient(authClient)
             .readTimeout(120)
             .defaultChatRequestParameters(
@@ -68,6 +73,14 @@ class GigaChatServiceImpl : LlmService {
             .verifySslCerts(true)
             .logRequests(true)
             .logResponses(true)
+            .build()
+
+        gigaChatClient = GigaChatClient.builder()
+            .authClient(authClient)
+            .readTimeout(720)
+            .logRequests(true)
+            .logResponses(true)
+            .verifySslCerts(true)
             .build()
 
         logger.info("GigaChatServiceImpl успешно инициализирован.")
@@ -113,7 +126,7 @@ class GigaChatServiceImpl : LlmService {
                 messages.add(UserMessage.from(newUserPrompt))
 
                 val gigaParams = GigaChatChatRequestParameters.builder()
-                    .modelName(model.defaultRequestParameters().modelName())
+                    .modelName(chatModel.defaultRequestParameters().modelName())
                     .maxOutputTokens(1024)
                     .build()
 
@@ -122,13 +135,57 @@ class GigaChatServiceImpl : LlmService {
                     .parameters(gigaParams)
                     .build()
 
-                val response = model.doChat(chatRequest)
+                val response = chatModel.doChat(chatRequest)
                 response.aiMessage().text()
 
             } catch (e: Exception) {
                 logger.error("Ошибка при работе с GigaChat API", e)
                 "Произошла ошибка при обращении к AI-модели GigaChat. Пожалуйста, попробуйте позже."
             }
+        }
+    }
+
+    override suspend fun generateImage(prompt: String): ByteArray? {
+        return try {
+            withContext(Dispatchers.IO) {
+                val userMessage = UserMessage.from(
+                    "Нарисуй: $prompt. Обязательно верни результат в теге <img src=\\\"file_id\\\">"
+                )
+
+                val imageGenParams = GigaChatChatRequestParameters.builder()
+                    .modelName(chatModel.defaultRequestParameters().modelName())
+                    .functionCall(ChatFunctionCallEnum.AUTO)
+                    .maxOutputTokens(chatModel.defaultRequestParameters().maxOutputTokens())
+                    .build()
+
+                val chatRequest = ChatRequest.builder()
+                    .messages(listOf(userMessage))
+                    .parameters(imageGenParams)
+                    .build()
+
+                val response = chatModel.doChat(chatRequest)
+                val content = response.aiMessage().text()
+
+                if (content.contains("<img src=\"")) {
+                    val fileId = content.substringAfter("<img src=\"").substringBefore("\"")
+
+                    if (fileId.isBlank()) {
+                        throw IllegalStateException("Не удалось извлечь fileId из ответа: $content")
+                    }
+
+                    val imageBytes = gigaChatClient.downloadFile(fileId, null)
+
+                    logger.info("Изображение успешно сгенерировано. File ID: {}", fileId)
+
+                    imageBytes
+                } else {
+                    logger.warn("GigaChat не вернул тег <img> в ответ на промпт: {}. Ответ модели: {}", prompt, content)
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            logger.error("Ошибка при генерации/скачивании изображения через GigaChat API", e)
+            null
         }
     }
 }

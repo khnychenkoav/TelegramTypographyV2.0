@@ -10,6 +10,10 @@ import com.github.kotlintelegrambot.network.fold
 import com.github.kotlintelegrambot.dispatcher.handlers.MessageHandlerEnvironment
 import com.github.kotlintelegrambot.entities.ParseMode
 import com.github.kotlintelegrambot.entities.TelegramFile
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import org.example.analysis.CannedResponses
 import org.example.analysis.ComplexityAnalyzer
 import org.example.calculation.CalculatorService
@@ -46,6 +50,7 @@ class ResponseHandler(
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
     private val keyboardFactory = KeyboardFactory(textProvider, priceListProvider)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private companion object {
         const val MAX_WORDS_FOR_CANNED = 5
@@ -251,6 +256,9 @@ class ResponseHandler(
                 )
                 jobQueue.submit(job)
             }
+            UserMode.AWAITING_IMAGE_GENERATION_PROMPT -> {
+                handleImageGenerationPrompt(env, text)
+            }
             UserMode.AWAITING_FILE_CAPTION -> {
                 val user = env.message.from ?: return
                 val userName = user.firstName + (user.lastName?.let { " $it" } ?: "")
@@ -382,6 +390,10 @@ class ResponseHandler(
                 if (layers != null) {
                     handlePrintLayersSelected(env.bot, chatId, layers)
                 }
+            }
+
+            callbackData == KeyboardFactory.GENERATE_IMAGE_CALLBACK -> {
+                startImageGeneration(env.bot, chatId)
             }
 
         }
@@ -1069,5 +1081,47 @@ class ResponseHandler(
             }
         )
         jobQueue.submit(job)
+    }
+
+    private fun startImageGeneration(bot: Bot, chatId: Long) {
+        sessionManager.updateSession(chatId, sessionManager.getSession(chatId).copy(
+            mode = UserMode.AWAITING_IMAGE_GENERATION_PROMPT
+        ))
+        sendOrEditMessage(
+            bot, chatId,
+            textProvider.get("image_gen.prompt"),
+            keyboardFactory.buildBackToMainMenuKeyboard()
+        )
+    }
+
+    private fun handleImageGenerationPrompt(env: TextHandlerEnvironment, text: String) {
+        val chatId = env.message.chat.id
+        sessionManager.updateSession(chatId, sessionManager.getSession(chatId).copy(mode = UserMode.MAIN_MENU))
+
+        sendOrEditMessage(env.bot, chatId, textProvider.get("image_gen.in_progress"), null, editPrevious = false)
+
+        scope.launch {
+            LlmSwitcher.switchTo(LlmType.GIGA_CHAT)
+            val imageService = LlmSwitcher.getCurrentLlmService()
+
+            val imageBytes = imageService.generateImage(text)
+
+            if (imageBytes != null) {
+                val photo = TelegramFile.ByByteArray(imageBytes, "generated_idea.png")
+                env.bot.sendPhoto(
+                    chatId = ChatId.fromId(chatId),
+                    photo = photo,
+                    caption = textProvider.get("image_gen.success"),
+                    replyMarkup = keyboardFactory.buildMainMenu()
+                )
+            } else {
+                sendOrEditMessage(
+                    env.bot, chatId,
+                    textProvider.get("image_gen.error"),
+                    keyboardFactory.buildMainMenu(),
+                    editPrevious = true
+                )
+            }
+        }
     }
 }

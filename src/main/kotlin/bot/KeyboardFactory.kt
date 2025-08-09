@@ -43,6 +43,9 @@ class KeyboardFactory(
         const val SUBMIT_ORDER_CALLBACK = "submit_order"
 
         const val ESCALATE_TO_LLM_CALLBACK = "escalate_to_llm"
+
+        const val GENERATE_IMAGE_CALLBACK = "generate_image"
+
     }
 
 
@@ -62,6 +65,12 @@ class KeyboardFactory(
             ),
             listOf(
                 InlineKeyboardButton.CallbackData(
+                    text = textProvider.get("button.generate_idea"),
+                    callbackData = GENERATE_IMAGE_CALLBACK
+                )
+            ),
+            listOf(
+                InlineKeyboardButton.CallbackData(
                     text = textProvider.get("button.contact_operator"),
                     callbackData = CONTACT_OPERATOR_CALLBACK
                 ),
@@ -69,7 +78,7 @@ class KeyboardFactory(
                     text = textProvider.get("button.info"),
                     callbackData = INFO_CALLBACK
                 )
-            )
+            ),
         )
     }
 
@@ -299,4 +308,5 @@ class KeyboardFactory(
             )
         )
     }
+
 }

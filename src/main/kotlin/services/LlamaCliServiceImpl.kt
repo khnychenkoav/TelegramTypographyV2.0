@@ -135,4 +135,9 @@ class LlamaCliServiceImpl(
 
         return promptBuilder.toString()
     }
+
+    override suspend fun generateImage(prompt: String): ByteArray? {
+        logger.warn("Попытка генерации изображения через локальную модель.")
+        return null // Локальная модель не умеет генерировать картинки
+    }
 }

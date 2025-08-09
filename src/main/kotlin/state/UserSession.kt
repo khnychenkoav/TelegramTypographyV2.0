@@ -26,6 +26,9 @@ enum class UserMode {
     AWAITING_FILE_CAPTION,
 
     AWAITING_NEWS_MESSAGE,
+
+    AWAITING_IMAGE_GENERATION_PROMPT,
+    AWAITING_ORDER_DESCRIPTION_WITH_IMAGE,
 }
 
 data class CalculationData(
@@ -73,5 +76,5 @@ data class UserSession(
     val conversationHistory: MutableList<Pair<String, String>> = mutableListOf(),
     var currentCalculation: CalculationData? = null,
     var lastBotMessageId: Long? = null,
-    var lastUserTextMessage: String? = null
+    var lastUserTextMessage: String? = null,
 )

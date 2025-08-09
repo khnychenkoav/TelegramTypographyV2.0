@@ -14,4 +14,6 @@ interface LlmService {
         history: List<Pair<String, String>>,
         newUserPrompt: String
     ): String
+
+    suspend fun generateImage(prompt: String): ByteArray?
 }
