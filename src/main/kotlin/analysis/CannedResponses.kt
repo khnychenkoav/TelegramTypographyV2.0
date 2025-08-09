@@ -10,7 +10,8 @@ object CannedResponses {
     private data class ProcessedResponse(
         val answer: String,
         val threshold: Int,
-        val keywordStems: Map<String, Int>
+        val keywordStems: Map<String, Int>,
+        val negativeKeywordStems: Set<String>
     )
 
     private val processedResponses: List<ProcessedResponse>
@@ -44,7 +45,10 @@ object CannedResponses {
                 threshold = config.threshold,
                 keywordStems = config.keywords.mapKeys { (key, _) ->
                     RussianStemmer.stem(key.lowercase(Locale.getDefault()))
-                }
+                },
+                negativeKeywordStems = config.negative_keywords.map {
+                    RussianStemmer.stem(it.lowercase(Locale.getDefault()))
+                }.toSet()
             )
         }
     }
@@ -60,6 +64,8 @@ object CannedResponses {
             .map { RussianStemmer.stem(it) }
             .toSet()
 
+        logger.info("Стемы из текста '{}': {}", text, textStems)
+
         if (textStems.isEmpty()) {
             return null
         }
@@ -68,6 +74,9 @@ object CannedResponses {
         var maxScore = 0
 
         for (response in processedResponses) {
+            if (response.negativeKeywordStems.any { it in textStems }) {
+                continue
+            }
             val currentScore = textStems
                 .sumOf { stem -> response.keywordStems[stem] ?: 0 }
 
