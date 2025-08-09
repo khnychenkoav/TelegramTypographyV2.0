@@ -72,5 +72,6 @@ data class UserSession(
     val name: String? = null,
     val conversationHistory: MutableList<Pair<String, String>> = mutableListOf(),
     var currentCalculation: CalculationData? = null,
-    var lastBotMessageId: Long? = null
+    var lastBotMessageId: Long? = null,
+    var lastUserTextMessage: String? = null
 )

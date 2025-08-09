@@ -209,9 +209,10 @@ class ResponseHandler(
         val chatId = env.message.chat.id
         val text = env.message.text.orEmpty()
         val session = sessionManager.getSession(chatId)
+        sessionManager.updateSession(chatId, session.copy(lastUserTextMessage = text))
         val cannedResponse = CannedResponses.findResponse(text)
         if (cannedResponse != null) {
-            sendOrEditMessage(env.bot, chatId, cannedResponse, keyboardFactory.buildBackToMainMenuKeyboard(), editPrevious = false)
+            sendOrEditMessage(env.bot, chatId, cannedResponse, keyboardFactory.buildAfterCannedResponseMenu(), editPrevious = false)
             return
         }
         when (session.mode) {
@@ -356,6 +357,9 @@ class ResponseHandler(
             callbackData.startsWith(KeyboardFactory.CALC_MATERIAL_PREFIX) -> {
                 val materialKey = callbackData.removePrefix(KeyboardFactory.CALC_MATERIAL_PREFIX)
                 handleMaterialSelected(env.bot, chatId, materialKey)
+            }
+            callbackData == KeyboardFactory.ESCALATE_TO_LLM_CALLBACK -> {
+                handleEscalateToLlm(env.bot, chatId)
             }
             callbackData == KeyboardFactory.SUBMIT_ORDER_CALLBACK -> {
                 handleSubmitOrder(env.bot, chatId)
@@ -964,5 +968,66 @@ class ResponseHandler(
         builder.append(footer)
 
         return builder.toString()
+    }
+
+    private fun handleEscalateToLlm(bot: Bot, chatId: Long) {
+        val session = sessionManager.getSession(chatId)
+        val lastQuestion = session.lastUserTextMessage
+
+        if (lastQuestion.isNullOrBlank()) {
+            logger.warn("Попытка эскалации к LLM без сохраненного вопроса для чата {}", chatId)
+            sendOrEditMessage(
+                bot = bot,
+                chatId = chatId,
+                text = "Произошла ошибка, я не помню ваш предыдущий вопрос. Пожалуйста, задайте его еще раз.",
+                replyMarkup = keyboardFactory.buildBackToMainMenuKeyboard()
+            )
+            return
+        }
+
+        val lastMessageId = session.lastBotMessageId
+        if (lastMessageId != null) {
+            bot.editMessageReplyMarkup(
+                chatId = ChatId.fromId(chatId),
+                messageId = lastMessageId,
+                replyMarkup = null
+            )
+        }
+
+        sendOrEditMessage(bot, chatId, textProvider.get("llm.in_queue"), null, editPrevious = false)
+
+        val complexity = complexityAnalyzer.analyze(lastQuestion)
+        val useGigaChat = if (complexity == Complexity.COMPLEX) {
+            RequestLimiter.allowComplexRequest(chatId)
+        } else {
+            false
+        }
+
+        logger.info("Эскалация к LLM. Решено использовать {}. Вопрос: '{}'", if (useGigaChat) "GigaChat" else "Local LLM", lastQuestion)
+
+        if (useGigaChat) {
+            LlmSwitcher.switchTo(LlmType.GIGA_CHAT)
+        } else {
+            LlmSwitcher.switchTo(LlmType.LOCAL)
+        }
+
+        val job = LlmJob(
+            chatId = chatId,
+            systemPrompt = textProvider.get("llm.system_prompt.chat"),
+            history = session.conversationHistory.toList(),
+            newUserPrompt = lastQuestion,
+            onResult = { result ->
+                val updatedHistory = session.conversationHistory
+                updatedHistory.add(lastQuestion to result)
+                while (updatedHistory.size > 4) {
+                    updatedHistory.removeFirst()
+                }
+
+                val sanitizedResult = sanitizeMarkdownV1(result)
+                sessionManager.updateSession(chatId, session.copy(conversationHistory = updatedHistory, mode = UserMode.LLM_CHAT))
+                sendOrEditMessage(bot, chatId, sanitizedResult, keyboardFactory.buildBackToMainMenuKeyboard(), editPrevious = true)
+            }
+        )
+        jobQueue.submit(job)
     }
 }

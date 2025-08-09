@@ -41,6 +41,8 @@ class KeyboardFactory(
         const val INFO_FILE_REQ_CALLBACK = "info_file_req"
 
         const val SUBMIT_ORDER_CALLBACK = "submit_order"
+
+        const val ESCALATE_TO_LLM_CALLBACK = "escalate_to_llm"
     }
 
 
@@ -278,6 +280,23 @@ class KeyboardFactory(
         return InlineKeyboardButton.CallbackData(
             text = textProvider.get("button.back"),
             callbackData = "$BACK_CALLBACK_PREFIX$destination"
+        )
+    }
+
+    fun buildAfterCannedResponseMenu(): InlineKeyboardMarkup {
+        return InlineKeyboardMarkup.create(
+            listOf(
+                InlineKeyboardButton.CallbackData(
+                    text = "❓ Уточнить у AI-ассистента",
+                    callbackData = ESCALATE_TO_LLM_CALLBACK
+                )
+            ),
+            listOf(
+                InlineKeyboardButton.CallbackData(
+                    text = textProvider.get("button.back_to_main_menu"),
+                    callbackData = BACK_TO_MAIN_MENU_CALLBACK
+                )
+            )
         )
     }
 }
