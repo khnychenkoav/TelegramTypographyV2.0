@@ -221,22 +221,20 @@ class ResponseHandler(
         val session = sessionManager.getSession(chatId)
         sessionManager.updateSession(chatId, session.copy(lastUserTextMessage = text))
 
-        val wordCount = text.split(Regex("\\s+")).count()
-
-        if (wordCount <= MAX_WORDS_FOR_CANNED) {
-            val cannedResponse = CannedResponses.findResponse(text)
-            if (cannedResponse != null) {
-                sendOrEditMessage(env.bot, chatId, cannedResponse, keyboardFactory.buildAfterCannedResponseMenu(), editPrevious = false)
-                return
-            }
-        } else {
-            logger.debug("Запрос слишком длинный ({} слов) для CannedResponses, пропускаем.", wordCount)
-        }
-
         when (session.mode) {
             UserMode.AWAITING_NAME -> handleNameInput(env, text)
-            UserMode.MAIN_MENU -> showMainMenu(env.bot, chatId)
-            UserMode.LLM_CHAT -> handleLlmChat(env, text)
+            UserMode.MAIN_MENU, UserMode.LLM_CHAT -> {
+                val wordCount = text.split(Regex("\\s+")).count()
+                if (wordCount <= MAX_WORDS_FOR_CANNED) {
+                    val cannedResponse = CannedResponses.findResponse(text)
+                    if (cannedResponse != null) {
+                        sendOrEditMessage(env.bot, chatId, cannedResponse, keyboardFactory.buildAfterCannedResponseMenu(), editPrevious = false)
+                        return
+                    }
+                }
+
+                handleLlmChat(env, text)
+            }
             UserMode.AWAITING_OPERATOR_QUERY -> handleOperatorQuery(env, text)
             UserMode.CALC_AWAITING_QUANTITY -> handleQuantitySelected(env.bot, chatId, text)
             UserMode.CALC_AWAITING_DIMENSIONS -> handleDimensionsSelected(env.bot, chatId, text)
