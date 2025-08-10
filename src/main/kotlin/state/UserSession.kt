@@ -28,7 +28,11 @@ enum class UserMode {
     AWAITING_NEWS_MESSAGE,
 
     AWAITING_IMAGE_GENERATION_PROMPT,
-    AWAITING_ORDER_DESCRIPTION_WITH_IMAGE,
+    IMAGE_GEN_AWAITING_ACTION,          // Ожидание действия после генерации (еще раз, оформить)
+    IMAGE_GEN_AWAITING_PRODUCT,         // Ожидание ввода типа продукта (футболка, кружка...)
+    IMAGE_GEN_AWAITING_QUANTITY,        // Ожидание ввода количества
+    IMAGE_GEN_AWAITING_COMMENTS,        // Ожидание комментариев
+    IMAGE_GEN_AWAITING_CONFIRMATION,
 }
 
 data class CalculationData(
@@ -77,4 +81,13 @@ data class UserSession(
     var currentCalculation: CalculationData? = null,
     var lastBotMessageId: Long? = null,
     var lastUserTextMessage: String? = null,
+    var creativeOrder: CreativeOrderData? = null
+)
+
+data class CreativeOrderData(
+    val imagePrompt: String,
+    var generatedImageId: String? = null,
+    var productType: String? = null,
+    var quantity: Int? = null,
+    var comments: String? = null
 )

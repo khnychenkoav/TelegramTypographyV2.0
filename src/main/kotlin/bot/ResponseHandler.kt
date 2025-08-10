@@ -25,6 +25,7 @@ import org.example.processing.LlmJob
 import org.example.services.LlmSwitcher
 import org.example.services.LlmType
 import org.example.state.CalculationData
+import org.example.state.CreativeOrderData
 import org.example.state.LimitType
 import org.example.state.RequestLimiter
 import org.example.state.SessionManager
@@ -282,6 +283,17 @@ class ResponseHandler(
                 sessionManager.updateSession(chatId, session.copy(mode = UserMode.MAIN_MENU))
                 showMainMenu(env.bot, chatId, editPrevious = false)
             }
+
+            UserMode.IMAGE_GEN_AWAITING_PRODUCT -> {
+                handleCreativeOrderProduct(env.bot, chatId, text)
+            }
+            UserMode.IMAGE_GEN_AWAITING_QUANTITY -> {
+                handleCreativeOrderQuantity(env.bot, chatId, text)
+            }
+            UserMode.IMAGE_GEN_AWAITING_COMMENTS -> {
+                handleCreativeOrderComments(env.bot, chatId, text)
+            }
+
             else -> {
                 logger.warn("Получено текстовое сообщение в необрабатываемом режиме: {}", session.mode)
                 sendOrEditMessage(env.bot, chatId, "Пожалуйста, используйте кнопки для выбора.", null, editPrevious = false)
@@ -393,6 +405,22 @@ class ResponseHandler(
 
             callbackData == KeyboardFactory.GENERATE_IMAGE_CALLBACK -> {
                 startImageGeneration(env.bot, chatId)
+            }
+
+            callbackData == KeyboardFactory.IMAGE_GEN_RETRY_CALLBACK -> {
+                startImageGeneration(env.bot, chatId)
+            }
+
+            callbackData == KeyboardFactory.IMAGE_GEN_CREATE_ORDER_CALLBACK -> {
+                startCreativeOrderSurvey(env.bot, chatId)
+            }
+
+            callbackData == KeyboardFactory.IMAGE_GEN_SUBMIT_TO_OPERATOR_CALLBACK -> {
+                submitCreativeOrderToOperator(env.bot, chatId)
+            }
+
+            callbackData == KeyboardFactory.IMAGE_GEN_EDIT_ORDER_CALLBACK -> {
+                startCreativeOrderSurvey(env.bot, chatId)
             }
 
         }
@@ -1108,7 +1136,11 @@ class ResponseHandler(
 
     private fun handleImageGenerationPrompt(env: TextHandlerEnvironment, text: String) {
         val chatId = env.message.chat.id
-        sessionManager.updateSession(chatId, sessionManager.getSession(chatId).copy(mode = UserMode.MAIN_MENU))
+        val creativeOrderData = CreativeOrderData(imagePrompt = text)
+        sessionManager.updateSession(chatId, sessionManager.getSession(chatId).copy(
+            mode = UserMode.MAIN_MENU,
+            creativeOrder = creativeOrderData
+        ))
 
         sendOrEditMessage(env.bot, chatId, textProvider.get("image_gen.in_progress"), null, editPrevious = false)
 
@@ -1120,12 +1152,26 @@ class ResponseHandler(
 
             if (imageBytes != null) {
                 val photo = TelegramFile.ByByteArray(imageBytes, "generated_idea.png")
-                env.bot.sendPhoto(
+                val sentMessage = env.bot.sendPhoto(
                     chatId = ChatId.fromId(chatId),
                     photo = photo,
-                    caption = textProvider.get("image_gen.success"),
-                    replyMarkup = keyboardFactory.buildMainMenu()
-                )
+                    caption = textProvider.get("image_gen.success_new"),
+                    replyMarkup = keyboardFactory.buildAfterImageGenMenu()
+                ).first?.body()?.result
+
+                if (sentMessage != null) {
+                    val photoFileId = sentMessage.photo?.last()?.fileId
+                    val session = sessionManager.getSession(chatId)
+                    session.creativeOrder?.let {
+                        it.generatedImageId = photoFileId
+                        sessionManager.updateSession(chatId, session.copy(
+                            mode = UserMode.IMAGE_GEN_AWAITING_ACTION,
+                            creativeOrder = it,
+                            lastBotMessageId = sentMessage.messageId
+                        ))
+                    }
+                }
+
             } else {
                 sendOrEditMessage(
                     env.bot, chatId,
@@ -1135,5 +1181,153 @@ class ResponseHandler(
                 )
             }
         }
+    }
+
+    private fun startCreativeOrderSurvey(bot: Bot, chatId: Long) {
+        val session = sessionManager.getSession(chatId)
+        val currentOrder = session.creativeOrder ?: run {
+            logger.error("CreativeOrderData не найден в сессии для chatId: $chatId")
+            return
+        }
+        val cleanOrder = CreativeOrderData(
+            imagePrompt = currentOrder.imagePrompt,
+            generatedImageId = currentOrder.generatedImageId
+        )
+
+        sessionManager.updateSession(chatId, session.copy(
+            mode = UserMode.IMAGE_GEN_AWAITING_PRODUCT,
+            creativeOrder = cleanOrder
+        ))
+
+        sendOrEditMessage(
+            bot,
+            chatId,
+            textProvider.get("creative_order.prompt_product"),
+            keyboardFactory.buildBackToMainMenuKeyboard()
+        )
+    }
+
+    private fun handleCreativeOrderProduct(bot: Bot, chatId: Long, productType: String) {
+        val session = sessionManager.getSession(chatId)
+        session.creativeOrder?.productType = productType
+        sessionManager.updateSession(chatId, session.copy(
+            mode = UserMode.IMAGE_GEN_AWAITING_QUANTITY
+        ))
+        sendOrEditMessage(
+            bot,
+            chatId,
+            textProvider.get("creative_order.prompt_quantity"),
+            null,
+            editPrevious = false
+        )
+    }
+
+    private fun handleCreativeOrderQuantity(bot: Bot, chatId: Long, quantityText: String) {
+        val quantity = quantityText.toIntOrNull()
+        if (quantity == null || quantity <= 0) {
+            sendOrEditMessage(bot, chatId, textProvider.get("calc.error.invalid_number"), null, editPrevious = false)
+            return
+        }
+
+        val session = sessionManager.getSession(chatId)
+        session.creativeOrder?.quantity = quantity
+        sessionManager.updateSession(chatId, session.copy(
+            mode = UserMode.IMAGE_GEN_AWAITING_COMMENTS
+        ))
+        sendOrEditMessage(
+            bot,
+            chatId,
+            textProvider.get("creative_order.prompt_comments"),
+            null,
+            editPrevious = false
+        )
+    }
+
+    private fun handleCreativeOrderComments(bot: Bot, chatId: Long, comments: String) {
+        val session = sessionManager.getSession(chatId)
+        session.creativeOrder?.comments = comments
+        sessionManager.updateSession(chatId, session.copy(
+            mode = UserMode.IMAGE_GEN_AWAITING_CONFIRMATION
+        ))
+
+        sendOrEditMessage(bot, chatId, textProvider.get("llm.in_queue"), null, editPrevious = true)
+
+        val orderData = session.creativeOrder ?: return
+        val estimationPrompt = textProvider.get(
+            "creative_order.estimation_prompt",
+            orderData.productType ?: "не указан",
+            orderData.quantity ?: 1,
+            orderData.comments ?: "нет",
+            orderData.imagePrompt
+        )
+
+        LlmSwitcher.switchTo(LlmType.GIGA_CHAT)
+        val job = LlmJob(
+            chatId = chatId,
+            systemPrompt = textProvider.get("llm.system_prompt.creative_estimator"),
+            history = emptyList(),
+            newUserPrompt = estimationPrompt,
+            onResult = { rawResult, resultForUser ->
+                val sanitizedResult = sanitizeMarkdownV1(resultForUser)
+                sendOrEditMessage(bot, chatId, sanitizedResult, keyboardFactory.buildCreativeOrderConfirmationMenu(), editPrevious = false)
+            }
+        )
+        jobQueue.submit(job)
+    }
+
+    private fun submitCreativeOrderToOperator(bot: Bot, chatId: Long) {
+        val session = sessionManager.getSession(chatId)
+        val order = session.creativeOrder
+        val user = session.name ?: "Пользователь (ID: $chatId)"
+        val userMention = "[${user}](tg://user?id=${chatId})"
+        if (order == null) {
+            logger.error("Попытка отправить креативный заказ, но данных нет. ChatID: $chatId")
+            return
+        }
+
+        val messageForOperator = """
+    🎨 *Новая креативная заявка (сгенерировано AI)* 🎨
+
+    *От:* $userMention
+    *ID чата:* `$chatId`
+    ------------------------------
+    *Идея (промпт):* ${order.imagePrompt}
+    *Продукт:* ${order.productType}
+    *Количество:* ${order.quantity} шт.
+    *Комментарии/правки:* ${order.comments}
+
+    *Пожалуйста, свяжитесь с клиентом для уточнения деталей, макета и точной стоимости.*
+    
+    """.trimIndent()
+        val footer = "\n\n—\n👤 UserID::${chatId}::"
+        val finalMessage = messageForOperator + footer
+
+        if (OPERATOR_CHAT_ID != 0L) {
+            val operatorChat = ChatId.fromId(OPERATOR_CHAT_ID)
+            val imageId = order.generatedImageId
+            if (imageId != null) {
+                bot.sendPhoto(
+                    chatId = operatorChat,
+                    photo = TelegramFile.ByFileId(imageId)
+                )
+            }
+            bot.sendMessage(
+                chatId = operatorChat,
+                text = finalMessage,
+                parseMode = ParseMode.MARKDOWN
+            )
+        }
+
+        sendOrEditMessage(
+            bot,
+            chatId,
+            textProvider.get("creative_order.submitted_to_operator"),
+            keyboardFactory.buildMainMenu()
+        )
+
+        sessionManager.updateSession(chatId, session.copy(
+            mode = UserMode.MAIN_MENU,
+            creativeOrder = null
+        ))
     }
 }

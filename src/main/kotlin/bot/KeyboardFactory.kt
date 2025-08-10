@@ -46,6 +46,11 @@ class KeyboardFactory(
 
         const val GENERATE_IMAGE_CALLBACK = "generate_image"
 
+        const val IMAGE_GEN_RETRY_CALLBACK = "image_gen_retry"
+        const val IMAGE_GEN_CREATE_ORDER_CALLBACK = "image_gen_create_order"
+        const val IMAGE_GEN_SUBMIT_TO_OPERATOR_CALLBACK = "image_gen_submit"
+        const val IMAGE_GEN_EDIT_ORDER_CALLBACK = "image_gen_edit"
+
     }
 
 
@@ -298,6 +303,52 @@ class KeyboardFactory(
                 InlineKeyboardButton.CallbackData(
                     text = "❓ Уточнить у AI-ассистента",
                     callbackData = ESCALATE_TO_LLM_CALLBACK
+                )
+            ),
+            listOf(
+                InlineKeyboardButton.CallbackData(
+                    text = textProvider.get("button.back_to_main_menu"),
+                    callbackData = BACK_TO_MAIN_MENU_CALLBACK
+                )
+            )
+        )
+    }
+
+    fun buildAfterImageGenMenu(): InlineKeyboardMarkup {
+        return InlineKeyboardMarkup.create(
+            listOf(
+                InlineKeyboardButton.CallbackData(
+                    text = "✅ Отлично, оформляем!",
+                    callbackData = IMAGE_GEN_CREATE_ORDER_CALLBACK
+                )
+            ),
+            listOf(
+                InlineKeyboardButton.CallbackData(
+                    text = "🔄 Попробовать еще раз",
+                    callbackData = IMAGE_GEN_RETRY_CALLBACK
+                )
+            ),
+            listOf(
+                InlineKeyboardButton.CallbackData(
+                    text = textProvider.get("button.back_to_main_menu"),
+                    callbackData = BACK_TO_MAIN_MENU_CALLBACK
+                )
+            )
+        )
+    }
+
+    fun buildCreativeOrderConfirmationMenu(): InlineKeyboardMarkup {
+        return InlineKeyboardMarkup.create(
+            listOf(
+                InlineKeyboardButton.CallbackData(
+                    text = "✅ Да, отправить заявку оператору",
+                    callbackData = IMAGE_GEN_SUBMIT_TO_OPERATOR_CALLBACK
+                )
+            ),
+            listOf(
+                InlineKeyboardButton.CallbackData(
+                    text = "✏️ Изменить параметры",
+                    callbackData = IMAGE_GEN_EDIT_ORDER_CALLBACK
                 )
             ),
             listOf(
