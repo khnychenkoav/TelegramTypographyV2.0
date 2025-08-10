@@ -25,6 +25,7 @@ import org.example.processing.LlmJob
 import org.example.services.LlmSwitcher
 import org.example.services.LlmType
 import org.example.state.CalculationData
+import org.example.state.LimitType
 import org.example.state.RequestLimiter
 import org.example.state.SessionManager
 import org.example.state.UserMode
@@ -528,7 +529,7 @@ class ResponseHandler(
 
         if (wordCount >= MIN_WORDS_FOR_GIGA_CHAT) {
             reason = " (длинный запрос, {} слов >= {})".format(wordCount, MIN_WORDS_FOR_GIGA_CHAT)
-            if (RequestLimiter.allowComplexRequest(chatId)) {
+            if (RequestLimiter.isAllowed(chatId, LimitType.COMPLEX_LLM_REQUEST)) {
                 useGigaChat = true
             } else {
                 reason += " (лимит GigaChat исчерпан)"
@@ -537,7 +538,7 @@ class ResponseHandler(
 
         else if (complexityScore >= GIGA_CHAT_COMPLEXITY_THRESHOLD) {
             reason = " (сложные ключевые слова, счет: {} >= {})".format(complexityScore, GIGA_CHAT_COMPLEXITY_THRESHOLD)
-            if (RequestLimiter.allowComplexRequest(chatId)) {
+            if (RequestLimiter.isAllowed(chatId, LimitType.COMPLEX_LLM_REQUEST)) {
                 useGigaChat = true
             } else {
                 reason += " (лимит GigaChat исчерпан)"
@@ -1036,14 +1037,14 @@ class ResponseHandler(
 
         if (wordCount >= MIN_WORDS_FOR_GIGA_CHAT) {
             reason = " (эскалация, длинный запрос, {} слов >= {})".format(wordCount, MIN_WORDS_FOR_GIGA_CHAT)
-            if (RequestLimiter.allowComplexRequest(chatId)) {
+            if (RequestLimiter.isAllowed(chatId, LimitType.COMPLEX_LLM_REQUEST)) {
                 useGigaChat = true
             } else {
                 reason += " (лимит GigaChat исчерпан)"
             }
         } else if (complexityScore >= GIGA_CHAT_COMPLEXITY_THRESHOLD) {
             reason = " (эскалация, сложные ключевые слова, счет: {} >= {})".format(complexityScore, GIGA_CHAT_COMPLEXITY_THRESHOLD)
-            if (RequestLimiter.allowComplexRequest(chatId)) {
+            if (RequestLimiter.isAllowed(chatId, LimitType.COMPLEX_LLM_REQUEST)) {
                 useGigaChat = true
             } else {
                 reason += " (лимит GigaChat исчерпан)"
@@ -1082,13 +1083,26 @@ class ResponseHandler(
     }
 
     private fun startImageGeneration(bot: Bot, chatId: Long) {
+        if (!RequestLimiter.isAllowed(chatId, LimitType.IMAGE_GENERATION)) {
+            logger.warn("Пользователь {} попытался сгенерировать изображение, но достиг лимита.", chatId)
+            val limit = RequestLimiter.getLimitFor(LimitType.IMAGE_GENERATION)
+            sendOrEditMessage(
+                bot,
+                chatId,
+                textProvider.get("image_gen.limit_reached"),
+                keyboardFactory.buildMainMenu(),
+                editPrevious = false
+            )
+            return
+        }
         sessionManager.updateSession(chatId, sessionManager.getSession(chatId).copy(
             mode = UserMode.AWAITING_IMAGE_GENERATION_PROMPT
         ))
         sendOrEditMessage(
             bot, chatId,
             textProvider.get("image_gen.prompt"),
-            keyboardFactory.buildBackToMainMenuKeyboard()
+            keyboardFactory.buildBackToMainMenuKeyboard(),
+            editPrevious = false
         )
     }
 
