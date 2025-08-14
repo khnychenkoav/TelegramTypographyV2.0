@@ -814,8 +814,20 @@ class ResponseHandler(
             sessionManager.updateSession(chatId, session.copy(mode = UserMode.MAIN_MENU, currentCalculation = null))
             showMainMenu(bot, chatId, editPrevious = false)
         } else {
-            val resultTextForLlm = formatCalculationResult(result)
-            val initialMessage = textProvider.get("calc.result.success", resultTextForLlm)
+            val resultText = formatCalculationResult(result)
+            val promptForLlm = """
+    Вот данные для комментирования:
+    
+    ПАРАМЕТРЫ ЗАКАЗА:
+    - Продукт: ${params.productType ?: "не указан"}
+    - Количество: ${params.quantity ?: "не указано"} шт.
+    - Материал: ${params.material ?: "не указан"}
+    - Толщина: ${params.thicknessMm ?: "не указана"} мм
+    - Размеры: ${if (params.diameterCm != null) "диаметр ${params.diameterCm} см" else "${params.widthCm}x${params.heightCm} см"}
+
+    ГОТОВЫЙ РАСЧЕТ (не меняй эти цифры!):
+    $resultText
+    """.trimIndent()
 
             sendOrEditMessage(bot, chatId, textProvider.get("llm.in_queue"), null, editPrevious = true)
             LlmSwitcher.switchTo(LlmType.GIGA_CHAT)
@@ -823,7 +835,7 @@ class ResponseHandler(
                 chatId = chatId,
                 systemPrompt = textProvider.get("llm.system_prompt.commentator"),
                 history = emptyList(),
-                newUserPrompt = initialMessage,
+                newUserPrompt = promptForLlm,
                 onResult = { rawResult, resultForUser ->
                     val sanitizedResult = sanitizeMarkdownV1(resultForUser)
                     sendOrEditMessage(bot, chatId, sanitizedResult, keyboardFactory.buildPostCalculationMenu(), editPrevious = false)
